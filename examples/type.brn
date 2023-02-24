@@ -1,0 +1,35 @@
+type Foo;
+
+type Bar {
+    self {
+        # inscrutable variable name
+        a: i32,
+        # b is just b
+        b: Foo,
+    }
+}
+
+type Baz {
+    self {
+        c: i32 | void
+    }
+
+    pub fn show() -> void {
+        if c @= void {
+            std::io::println("void");
+        }
+        else {
+            std::io::println(c@i32);
+        }
+        # some comment
+    }
+}
+
+type Number {
+    Odd {
+        prev: Even
+    }
+    Even {
+        prev: Odd,
+    }
+}

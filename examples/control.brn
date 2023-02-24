@@ -1,0 +1,9 @@
+fn main(args: [str]) -> i32 {
+    if true {
+        std::io::println("something");
+    }
+
+    for i in range(0, 10) {
+        std::io::println("something");
+    }
+}

@@ -1,0 +1,14 @@
+mod a {
+    fn x() -> void { }
+}
+
+mod b {
+    mod c {
+        fn y() -> i32 { 0 }
+    }
+}
+
+fn main(args: [str]) -> i32 {
+    a::x();
+    b::c::y();
+}

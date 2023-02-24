@@ -1,0 +1,11 @@
+type Foo;
+
+trait Bar {
+    fn baz() -> void;
+}
+
+impl Bar for Foo {
+    fn baz() -> void {
+        void
+    }
+}
