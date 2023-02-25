@@ -5,7 +5,7 @@ const READ_INCREMENT: usize = 1024;
 pub type UnitIdentifier = String;
 
 /// A unit is a source file that is being compiled.
-/// It is a wrapper around a `Read` object that provides
+/// It is a wrapper around a `Read`-implementing struct that provides
 /// a buffer of the source code, lazy loading it as needed.
 #[derive(Debug)]
 pub struct Unit<'i, S>
