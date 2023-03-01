@@ -145,12 +145,17 @@ impl<'u> Clone for Span<'u> {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Location {
     pub line: usize,
+    pub line_start: usize,
     pub column: usize,
 }
 
 impl Location {
-    pub fn new(line: usize, column: usize) -> Self {
-        Self { line, column }
+    pub fn new(line: usize, line_start: usize, column: usize) -> Self {
+        Self {
+            line,
+            line_start,
+            column,
+        }
     }
 }
 

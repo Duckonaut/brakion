@@ -6,21 +6,21 @@ use crate::unit::Unit;
 use std::io::Read;
 
 #[derive(Debug)]
-pub struct Lexer<'u>
-{
+pub struct Lexer<'u> {
     unit: &'u mut Unit<'u>,
     current: Option<char>,
     start: usize,
     current_pos: usize,
+    current_pos_in_bytes: usize,
     start_line: usize,
     current_line: usize,
+    current_line_start_in_bytes: usize,
     start_column: usize,
     current_column: usize,
     emitted_eof: bool,
 }
 
-impl<'u> Lexer<'u>
-{
+impl<'u> Lexer<'u> {
     pub fn new(unit: &'u mut Unit<'u>) -> Self {
         let current = unit.read();
         Self {
@@ -28,8 +28,10 @@ impl<'u> Lexer<'u>
             current,
             start: 0,
             current_pos: 0,
+            current_pos_in_bytes: 0,
             start_line: 1,
             current_line: 1,
+            current_line_start_in_bytes: 0,
             start_column: 1,
             current_column: 1,
             emitted_eof: false,
@@ -291,9 +293,11 @@ impl<'u> Lexer<'u>
         let c = self.current;
         self.current = self.unit.read();
         self.current_pos += 1;
+        self.current_pos_in_bytes += c.map_or(0, |c| c.len_utf8());
         self.current_column += 1;
         if c == Some('\n') {
             self.current_line += 1;
+            self.current_line_start_in_bytes = self.current_pos_in_bytes;
             self.current_column = 1;
         }
         c
@@ -302,8 +306,12 @@ impl<'u> Lexer<'u>
     fn span(&self) -> Option<Span<'u>> {
         Some(Span::new(
             (*self.unit).name(),
-            Location::new(self.start_line, self.start_column),
-            Location::new(self.current_line, self.current_column),
+            Location::new(self.start_line, self.current_line_start_in_bytes, self.start_column),
+            Location::new(
+                self.current_line,
+                self.current_line_start_in_bytes,
+                self.current_column,
+            ),
         ))
     }
 
@@ -312,8 +320,7 @@ impl<'u> Lexer<'u>
     }
 }
 
-impl<'u> Iterator for Lexer<'u>
-{
+impl<'u> Iterator for Lexer<'u> {
     type Item = Token<'u>;
 
     fn next(&mut self) -> Option<Self::Item> {
