@@ -7,23 +7,28 @@ pub type UnitIdentifier = String;
 /// A unit is a source file that is being compiled.
 /// It is a wrapper around a `Read`-implementing struct that provides
 /// a buffer of the source code, lazy loading it as needed.
-#[derive(Debug)]
-pub struct Unit<'i, S>
-where
-    S: Read,
-{
+pub struct Unit<'i> {
     pub name: &'i str,
     pub code: String,
-    source: RefCell<S>,
+    source: RefCell<Box<dyn Read>>,
     is_at_end: bool,
     read_pos: usize,
 }
 
-impl<'i, S> Unit<'i, S>
-where
-    S: Read,
-{
-    pub fn new(name: &'i str, source: S) -> Self {
+impl<'i> std::fmt::Debug for Unit<'i> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Unit")
+            .field("name", &self.name)
+            .field("code", &self.code)
+            .field("source", &"RefCell<Box<dyn Read>>")
+            .field("is_at_end", &self.is_at_end)
+            .field("read_pos", &self.read_pos)
+            .finish()
+    }
+}
+
+impl<'i> Unit<'i> {
+    pub fn new<R: Read + 'static>(name: &'i str, source: Box<R>) -> Self {
         Self {
             name,
             code: String::new(),
@@ -96,48 +101,38 @@ where
     }
 }
 
-impl<'i, S> PartialEq for Unit<'i, S>
-where
-    S: Read,
-{
+impl<'i> PartialEq for Unit<'i> {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
     }
 }
 
-impl<'i, S> Hash for Unit<'i, S>
-where
-    S: Read,
-{
+impl<'i> Hash for Unit<'i> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.name.hash(state);
     }
 }
 
 #[derive(Debug, Copy, PartialEq, Hash)]
-pub struct Span<'u>
-{
+pub struct Span<'u> {
     pub unit: &'u str,
     pub start: Location,
     pub end: Location,
 }
 
-impl<'u> Span<'u>
-{
+impl<'u> Span<'u> {
     pub fn new(unit: &'u str, start: Location, end: Location) -> Self {
         Self { unit, start, end }
     }
 }
 
-impl<'u> Display for Span<'u>
-{
+impl<'u> Display for Span<'u> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}-{}@{}", self.start, self.end, self.unit)
     }
 }
 
-impl<'u> Clone for Span<'u>
-{
+impl<'u> Clone for Span<'u> {
     fn clone(&self) -> Self {
         Self {
             unit: self.unit,

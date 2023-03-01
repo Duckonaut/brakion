@@ -6,11 +6,9 @@ use crate::unit::Unit;
 use std::io::Read;
 
 #[derive(Debug)]
-pub struct Lexer<'u, S>
-where
-    S: Read,
+pub struct Lexer<'u>
 {
-    unit: &'u mut Unit<'u, S>,
+    unit: &'u mut Unit<'u>,
     current: Option<char>,
     start: usize,
     current_pos: usize,
@@ -21,11 +19,9 @@ where
     emitted_eof: bool,
 }
 
-impl<'u, S> Lexer<'u, S>
-where
-    S: Read,
+impl<'u> Lexer<'u>
 {
-    pub fn new(unit: &'u mut Unit<'u, S>) -> Self {
+    pub fn new(unit: &'u mut Unit<'u>) -> Self {
         let current = unit.read();
         Self {
             unit,
@@ -90,7 +86,7 @@ where
                     self.advance()
                         .map(|_| Token::new(TokenKind::Colon, self.span()))
                 }
-            },
+            }
             Some('-') => {
                 if self.match_next('>') {
                     self.advance()
@@ -316,9 +312,7 @@ where
     }
 }
 
-impl<'u, S> Iterator for Lexer<'u, S>
-where
-    S: Read,
+impl<'u> Iterator for Lexer<'u>
 {
     type Item = Token<'u>;
 
