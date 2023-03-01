@@ -90,6 +90,7 @@ pub enum TokenKind {
 
     Eof,
     Error(String),
+    Comment(String),
 }
 
 impl Display for TokenKind {
@@ -146,6 +147,7 @@ impl Display for TokenKind {
             TokenKind::Void => write!(f, "void"),
             TokenKind::Eof => write!(f, "EOF"),
             TokenKind::Error(s) => write!(f, "error: {s}"),
+            TokenKind::Comment(s) => write!(f, "comment: {s}"),
         }
     }
 }
@@ -157,6 +159,8 @@ impl PartialEq for TokenKind {
             (TokenKind::String(s1), TokenKind::String(s2)) => s1 == s2,
             (TokenKind::Integer(n1), TokenKind::Integer(n2)) => n1 == n2,
             (TokenKind::Float(n1), TokenKind::Float(n2)) => n1 == n2,
+            (TokenKind::Error(s1), TokenKind::Error(s2)) => s1 == s2,
+            (TokenKind::Comment(s1), TokenKind::Comment(s2)) => s1 == s2,
             _ => std::mem::discriminant(self) == std::mem::discriminant(other),
         }
     }
@@ -170,6 +174,8 @@ impl Hash for TokenKind {
             TokenKind::String(s) => s.hash(state),
             TokenKind::Integer(n) => n.hash(state),
             TokenKind::Float(n) => n.to_bits().hash(state),
+            TokenKind::Comment(s) => s.hash(state),
+            TokenKind::Error(s) => s.hash(state),
             _ => {}
         }
     }
