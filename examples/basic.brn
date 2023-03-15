@@ -1,0 +1,12 @@
+fn main() {
+    var x = 0;
+
+    while (x < 10) {
+        std::io::println(x);
+        x = x + 1;
+    }
+
+    for (var i = 1; i <= 10; i = i + 1) {
+        std::io::println(i);
+    }
+}

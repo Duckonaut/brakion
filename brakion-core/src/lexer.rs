@@ -5,7 +5,7 @@ use crate::unit::Span;
 use crate::unit::Unit;
 
 pub trait TokenProducer<'u> {
-    fn next_token(&mut self) -> Option<Token<'u>>;
+    fn next(&mut self) -> Option<Token<'u>>;
 }
 
 #[derive(Debug)]
@@ -41,6 +41,43 @@ impl<'u> Lexer<'u> {
         }
     }
 
+    pub fn next_token(&mut self) -> Option<Token<'u>> {
+        self.skip_whitespace();
+        self.start = self.current_pos;
+        self.start_line = self.current_line;
+        self.start_column = self.current_column;
+
+        // NOTE: maybe make this a macro?
+        let token = self
+            .single_char_token()
+            .or_else(|| self.double_char_token())
+            .or_else(|| self.string())
+            .or_else(|| self.comment())
+            .or_else(|| self.number())
+            .or_else(|| self.identifier());
+
+        match token {
+            Some(token) => Some(token),
+            None => match self.current {
+                Some(c) => {
+                    self.advance();
+                    Some(Token::new(
+                        TokenKind::Error(format!("Unexpected character: {c}")),
+                        self.span(),
+                    ))
+                }
+                None => {
+                    if self.emitted_eof {
+                        None
+                    } else {
+                        self.emitted_eof = true;
+                        Some(Token::new(TokenKind::Eof, None))
+                    }
+                }
+            },
+        }
+    }
+
     fn skip_whitespace(&mut self) {
         while let Some(c) = self.current {
             match c {
@@ -52,20 +89,95 @@ impl<'u> Lexer<'u> {
                     self.start_line = self.current_line;
                     self.start_column = self.current_column;
                 }
-                '#' => {
-                    while let Some(c) = self.advance() {
-                        if c == '\n' {
-                            self.advance();
-                            break;
-                        }
-                    }
-                }
                 _ => break,
             }
         }
     }
 
+    fn single_char_token(&mut self) -> Option<Token<'u>> {
+        let token = match self.current {
+            Some('(') => Some(Token::new(TokenKind::LeftParen, self.span())),
+            Some(')') => Some(Token::new(TokenKind::RightParen, self.span())),
+            Some('{') => Some(Token::new(TokenKind::LeftBrace, self.span())),
+            Some('}') => Some(Token::new(TokenKind::RightBrace, self.span())),
+            Some('[') => Some(Token::new(TokenKind::LeftBracket, self.span())),
+            Some(']') => Some(Token::new(TokenKind::RightBracket, self.span())),
+            Some(',') => Some(Token::new(TokenKind::Comma, self.span())),
+            Some('.') => Some(Token::new(TokenKind::Dot, self.span())),
+            Some('+') => Some(Token::new(TokenKind::Plus, self.span())),
+            Some(';') => Some(Token::new(TokenKind::Semicolon, self.span())),
+            Some('/') => Some(Token::new(TokenKind::Slash, self.span())),
+            Some('*') => Some(Token::new(TokenKind::Star, self.span())),
+            Some('|') => Some(Token::new(TokenKind::Pipe, self.span())),
+            _ => None,
+        };
+
+        if token.is_some() {
+            self.advance();
+        }
+
+        token
+    }
+
+    fn double_char_token(&mut self) -> Option<Token<'u>> {
+        match self.current {
+            Some(':') => {
+                if self.match_next(':') {
+                    Some(Token::new(TokenKind::DoubleColon, self.span()))
+                } else {
+                    Some(Token::new(TokenKind::Colon, self.span()))
+                }
+            }
+            Some('-') => {
+                if self.match_next('>') {
+                    Some(Token::new(TokenKind::Arrow, self.span()))
+                } else {
+                    Some(Token::new(TokenKind::Minus, self.span()))
+                }
+            }
+            Some('!') => {
+                if self.match_next('=') {
+                    Some(Token::new(TokenKind::BangEqual, self.span()))
+                } else {
+                    Some(Token::new(TokenKind::Bang, self.span()))
+                }
+            }
+            Some('=') => {
+                if self.match_next('=') {
+                    Some(Token::new(TokenKind::EqualEqual, self.span()))
+                } else {
+                    Some(Token::new(TokenKind::Equal, self.span()))
+                }
+            }
+            Some('>') => {
+                if self.match_next('=') {
+                    Some(Token::new(TokenKind::GreaterEqual, self.span()))
+                } else {
+                    Some(Token::new(TokenKind::Greater, self.span()))
+                }
+            }
+            Some('<') => {
+                if self.match_next('=') {
+                    Some(Token::new(TokenKind::LessEqual, self.span()))
+                } else {
+                    Some(Token::new(TokenKind::Less, self.span()))
+                }
+            }
+            Some('@') => {
+                if self.match_next('=') {
+                    Some(Token::new(TokenKind::AtEqual, self.span()))
+                } else {
+                    Some(Token::new(TokenKind::At, self.span()))
+                }
+            }
+            _ => None,
+        }
+    }
+
     fn string(&mut self) -> Option<Token<'u>> {
+        if self.current != Some('"') {
+            return None;
+        }
         self.advance();
         while let Some(c) = self.advance() {
             if c == '"' {
@@ -84,6 +196,9 @@ impl<'u> Lexer<'u> {
     }
 
     fn comment(&mut self) -> Option<Token<'u>> {
+        if self.current != Some('#') {
+            return None;
+        }
         self.advance();
         loop {
             let c = self.advance();
@@ -108,6 +223,10 @@ impl<'u> Lexer<'u> {
     }
 
     fn number(&mut self) -> Option<Token<'u>> {
+        if self.current.is_none() || !self.current.unwrap().is_ascii_digit() {
+            return None;
+        }
+
         while let Some(c) = self.current {
             if c.is_ascii_digit() {
                 self.advance();
@@ -146,6 +265,10 @@ impl<'u> Lexer<'u> {
     }
 
     fn identifier(&mut self) -> Option<Token<'u>> {
+        if self.current.is_none() || !self.current.unwrap().is_alphanumeric() {
+            return None;
+        }
+
         while let Some(c) = self.current {
             if c.is_alphanumeric() {
                 self.advance();
@@ -179,15 +302,6 @@ impl<'u> Lexer<'u> {
         Some(Token::new(kind, self.span()))
     }
 
-    fn match_next(&mut self, expected: char) -> bool {
-        if self.peek() == Some(expected) {
-            self.advance();
-            true
-        } else {
-            false
-        }
-    }
-
     fn advance(&mut self) -> Option<char> {
         let c = self.current;
         self.current = self.unit.read();
@@ -218,138 +332,45 @@ impl<'u> Lexer<'u> {
         ))
     }
 
-    fn peek(&mut self) -> Option<char> {
-        self.unit.peek()
+    fn match_next(&mut self, c: char) -> bool {
+        self.advance();
+        if self.current == Some(c) {
+            self.advance();
+            true
+        } else {
+            false
+        }
     }
 }
 
 impl<'u> TokenProducer<'u> for Lexer<'u> {
-    fn next_token(&mut self) -> Option<Token<'u>> {
-        self.skip_whitespace();
-        self.start = self.current_pos;
-        self.start_line = self.current_line;
-        self.start_column = self.current_column;
-        let token = match self.current {
-            Some('(') => self
-                .advance()
-                .map(|_| Token::new(TokenKind::LeftParen, self.span())),
-            Some(')') => self
-                .advance()
-                .map(|_| Token::new(TokenKind::RightParen, self.span())),
-            Some('{') => self
-                .advance()
-                .map(|_| Token::new(TokenKind::LeftBrace, self.span())),
-            Some('}') => self
-                .advance()
-                .map(|_| Token::new(TokenKind::RightBrace, self.span())),
-            Some('[') => self
-                .advance()
-                .map(|_| Token::new(TokenKind::LeftBracket, self.span())),
-            Some(']') => self
-                .advance()
-                .map(|_| Token::new(TokenKind::RightBracket, self.span())),
-            Some(',') => self
-                .advance()
-                .map(|_| Token::new(TokenKind::Comma, self.span())),
-            Some('.') => self
-                .advance()
-                .map(|_| Token::new(TokenKind::Dot, self.span())),
-            Some('+') => self
-                .advance()
-                .map(|_| Token::new(TokenKind::Plus, self.span())),
-            Some(';') => self
-                .advance()
-                .map(|_| Token::new(TokenKind::Semicolon, self.span())),
-            Some('/') => self
-                .advance()
-                .map(|_| Token::new(TokenKind::Slash, self.span())),
-            Some('*') => self
-                .advance()
-                .map(|_| Token::new(TokenKind::Star, self.span())),
-            Some(':') => {
-                if self.match_next(':') {
-                    self.advance()
-                        .map(|_| Token::new(TokenKind::DoubleColon, self.span()))
-                } else {
-                    self.advance()
-                        .map(|_| Token::new(TokenKind::Colon, self.span()))
-                }
-            }
-            Some('-') => {
-                if self.match_next('>') {
-                    self.advance()
-                        .map(|_| Token::new(TokenKind::Arrow, self.span()))
-                } else {
-                    self.advance()
-                        .map(|_| Token::new(TokenKind::Minus, self.span()))
-                }
-            }
-            Some('!') => {
-                if self.match_next('=') {
-                    self.advance()
-                        .map(|_| Token::new(TokenKind::BangEqual, self.span()))
-                } else {
-                    self.advance()
-                        .map(|_| Token::new(TokenKind::Bang, self.span()))
-                }
-            }
-            Some('=') => {
-                if self.match_next('=') {
-                    self.advance()
-                        .map(|_| Token::new(TokenKind::EqualEqual, self.span()))
-                } else {
-                    self.advance()
-                        .map(|_| Token::new(TokenKind::Equal, self.span()))
-                }
-            }
-            Some('>') => {
-                if self.match_next('=') {
-                    self.advance()
-                        .map(|_| Token::new(TokenKind::GreaterEqual, self.span()))
-                } else {
-                    self.advance()
-                        .map(|_| Token::new(TokenKind::Greater, self.span()))
-                }
-            }
-            Some('<') => {
-                if self.match_next('=') {
-                    self.advance()
-                        .map(|_| Token::new(TokenKind::LessEqual, self.span()))
-                } else {
-                    self.advance()
-                        .map(|_| Token::new(TokenKind::Less, self.span()))
-                }
-            }
-            Some('@') => {
-                if self.match_next('=') {
-                    self.advance()
-                        .map(|_| Token::new(TokenKind::AtEqual, self.span()))
-                } else {
-                    self.advance()
-                        .map(|_| Token::new(TokenKind::At, self.span()))
-                }
-            }
-            Some('"') => self.string(),
-            Some('#') => self.comment(),
-            Some(c) if c.is_ascii_digit() => self.number(),
-            Some(c) if c.is_alphabetic() => self.identifier(),
-            Some(c) => {
-                self.advance();
-                Some(Token::new(
-                    TokenKind::Error(format!("Unexpected character: {c}")),
-                    self.span(),
-                ))
-            }
-            None => {
-                if self.emitted_eof {
-                    None
-                } else {
-                    self.emitted_eof = true;
-                    Some(Token::new(TokenKind::Eof, None))
-                }
-            }
-        };
-        self.skip_whitespace();
+    fn next(&mut self) -> Option<Token<'u>> {
+        self.next_token()
+    }
+}
+
+pub struct ParserTokenFilter<'u, T> where T: TokenProducer<'u> {
+    tokens: &'u mut T,
+}
+
+impl<'u, T> ParserTokenFilter<'u, T> where T: TokenProducer<'u> {
+    pub fn new(tokens: &'u mut T) -> Self {
+        Self { tokens }
+    }
+}
+
+impl<'u, T> TokenProducer<'u> for ParserTokenFilter<'u, T> where T: TokenProducer<'u> {
+    fn next(&mut self) -> Option<Token<'u>> {
+        let mut token = self.tokens.next();
+
+        while let Some(Token {
+            kind: TokenKind::Comment(_),
+            ..
+        }) = token
+        {
+            token = self.tokens.next();
+        }
+
         token
     }
 }

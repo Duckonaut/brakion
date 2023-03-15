@@ -44,6 +44,7 @@ pub enum TokenKind {
     Semicolon,
     Slash,
     Star,
+    Pipe,
 
     // One or two character tokens.
     Colon,
@@ -108,6 +109,7 @@ impl Display for TokenKind {
             TokenKind::Semicolon => write!(f, ";"),
             TokenKind::Slash => write!(f, "/"),
             TokenKind::Star => write!(f, "*"),
+            TokenKind::Pipe => write!(f, "|"),
             TokenKind::Colon => write!(f, ":"),
             TokenKind::DoubleColon => write!(f, "::"),
             TokenKind::Minus => write!(f, "-"),
@@ -147,7 +149,7 @@ impl Display for TokenKind {
             TokenKind::Void => write!(f, "void"),
             TokenKind::Eof => write!(f, "EOF"),
             TokenKind::Error(s) => write!(f, "error: {s}"),
-            TokenKind::Comment(s) => write!(f, "comment: {s}"),
+            TokenKind::Comment(s) => write!(f, "#{s}"),
         }
     }
 }

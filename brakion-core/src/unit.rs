@@ -64,29 +64,6 @@ impl<'i> Unit<'i> {
         Some(c)
     }
 
-    /// Returns the next character in the source code without advancing the read position.
-    /// If the end of the source code has been reached, returns `None`.
-    /// If the end of the buffer has been reached, loads more source code.
-    pub fn peek(&mut self) -> Option<char> {
-        self.peek_n(0)
-    }
-
-    /// Returns the nth character in the source code without advancing the read position.
-    /// If the end of the source code has been reached, returns `None`.
-    /// If the end of the buffer has been reached, loads more source code.
-    pub fn peek_n(&mut self, n: usize) -> Option<char> {
-        if self.is_at_end {
-            return None;
-        }
-
-        if self.read_pos + n >= self.code.len() && self.advance_buffer() < n {
-            return None;
-        }
-
-        let c = self.code.chars().nth(self.read_pos + n).unwrap();
-        Some(c)
-    }
-
     fn advance_buffer(&mut self) -> usize {
         let mut source = self.source.borrow_mut();
         let mut buffer = [0; READ_INCREMENT];
