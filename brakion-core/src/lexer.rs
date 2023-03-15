@@ -4,6 +4,15 @@ use crate::unit::Location;
 use crate::unit::Span;
 use crate::unit::Unit;
 
+macro_rules! try_all {
+    ($e1:expr, $($er:expr,)*) => {
+        $e1
+        $(
+            .or_else(|| $er)
+        )*
+    }
+}
+
 pub trait TokenProducer<'u> {
     fn next(&mut self) -> Option<Token<'u>>;
 }
@@ -47,14 +56,14 @@ impl<'u> Lexer<'u> {
         self.start_line = self.current_line;
         self.start_column = self.current_column;
 
-        // NOTE: maybe make this a macro?
-        let token = self
-            .single_char_token()
-            .or_else(|| self.double_char_token())
-            .or_else(|| self.string())
-            .or_else(|| self.comment())
-            .or_else(|| self.number())
-            .or_else(|| self.identifier());
+        let token = try_all!(
+            self.single_char_token(),
+            self.double_char_token(),
+            self.string(),
+            self.comment(),
+            self.number(),
+            self.identifier(),
+        );
 
         match token {
             Some(token) => Some(token),
@@ -349,17 +358,26 @@ impl<'u> TokenProducer<'u> for Lexer<'u> {
     }
 }
 
-pub struct ParserTokenFilter<'u, T> where T: TokenProducer<'u> {
+pub struct ParserTokenFilter<'u, T>
+where
+    T: TokenProducer<'u>,
+{
     tokens: &'u mut T,
 }
 
-impl<'u, T> ParserTokenFilter<'u, T> where T: TokenProducer<'u> {
+impl<'u, T> ParserTokenFilter<'u, T>
+where
+    T: TokenProducer<'u>,
+{
     pub fn new(tokens: &'u mut T) -> Self {
         Self { tokens }
     }
 }
 
-impl<'u, T> TokenProducer<'u> for ParserTokenFilter<'u, T> where T: TokenProducer<'u> {
+impl<'u, T> TokenProducer<'u> for ParserTokenFilter<'u, T>
+where
+    T: TokenProducer<'u>,
+{
     fn next(&mut self) -> Option<Token<'u>> {
         let mut token = self.tokens.next();
 
