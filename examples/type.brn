@@ -1,4 +1,7 @@
-type Foo;
+type Foo {
+    pub fn do_something() -> void {
+        # do something else
+    }
 
 type Bar {
     self {
@@ -7,29 +10,36 @@ type Bar {
         # b is just b
         b: Foo,
     }
+
+    pub fn show(self) {
+        std::println("a = {}", self.a);
+    }
 }
 
 type Baz {
     self {
-        c: i32 | void
+        c: i32 | Bar | Foo,
     }
 
-    pub fn show() -> void {
-        if c @= void {
-            std::io::println("void");
-        }
-        else {
-            std::io::println(c@i32);
-        }
-        # some comment
+    pub fn show(self) -> void {
+        self.c?Bar.show()
     }
 }
 
-type Number {
-    Odd {
-        prev: Even
+fn main() -> void {
+    var a = Foo;
+    var b = Bar { a: 5, b: a };
+    var c = Baz { c: 5 };
+
+    c.c = void;
+
+    var x = c.c;
+
+    match x {
+        on void x.show(),
+        else std::io::println("c is not void"),
     }
-    Even {
-        prev: Odd,
-    }
+
+    c.c?Foo.do_something();
+    c.c?Bar.do_something();
 }

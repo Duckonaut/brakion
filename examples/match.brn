@@ -1,0 +1,48 @@
+type Foo {
+    self {
+        a: i32,
+        b: i64,
+        c: f32,
+        d: f64 | void,
+    }
+
+    pub fn foo(self) -> i32 {
+        return self.a + self.b as i32;
+    }
+}
+
+type Bar {
+    self {
+        b: bool,
+    }
+}
+
+type Tristate {
+    None;
+    Some {
+        value: bool,
+    }
+
+    pub fn is_some(self) -> bool {
+        return self is Self::Some;
+    }
+
+    pub fn is_none(self) -> bool {
+        return self is Self::None;
+    }
+
+    pub fn unwrap(self) -> bool {
+        if self is Self::Some {
+            return self.value;
+        } else {
+            std::io::eprintln("unwrap called on None");
+            return std::os::exit(1);
+        }
+    }
+}
+
+fn main(args: [str]) -> i32 {
+    var foo = Foo { a: 1, b: 2, c: 3.0, d: 4.0 };
+
+    std::io::println!("{}", foo.foo());
+}

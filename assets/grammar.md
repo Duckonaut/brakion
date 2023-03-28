@@ -17,14 +17,16 @@ typeDeclaration ->
 traitDeclaration ->
     visibility "trait" IDENTIFIER "{" functionStub* "}";
 traitImplementation ->
-    "impl" IDENTIFIER "for" IDENTIFIER "{" function* "}";
+    "impl" namespacedIdentifier "for" IDENTIFIER "{" function* "}";
 
 functionSignature ->
     visibility "fn" IDENTIFIER "(" functionParameters? ")" returnType?;
 functionStub ->
     functionSignature ";";
 functionParameters ->
-    (typedIdentifier | "self") (",", typedIdentifier)*;
+    (functionParameter | "self") (",", functionParameter)*;
+functionParameter ->
+    typedIdentifier ("?" namespacedIdentifier);
 typedIdentifier ->
     IDENTIFIER ":" type;
 returnType ->
@@ -40,7 +42,7 @@ variantDefinition ->
 type ->
     typePrimary ("|" typePrimary)*;
 typePrimary ->
-    IDENTIFIER | ("[" type "]");
+    namespacedIdentifier | ("[" type "]");
 
 visibility ->
     "pub"?;
@@ -48,7 +50,7 @@ executableBlock ->
     "{" statement* expression? "}";
 
 statement ->
-    (expression ";") | varStmt | forStmt | ifStmt | returnStmt | whileStmt | breakStmt | continueStmt | executableBlock;
+    (expression ";") | varStmt | forStmt | ifStmt | returnStmt | whileStmt | matchStmt | breakStmt | continueStmt | executableBlock;
 
 varStmt ->
     "var" typedIdentifier "=" expression;
@@ -60,14 +62,25 @@ returnStmt ->
     "return" expression? ";";
 whileStmt ->
     "while" expression statement;
+matchStmt ->
+    "match" IDENTIFIER matchBody;
 breakStmt ->
     "break" ";";
 continueStmt ->
     "continue" ";";
 
+matchBody ->
+    "{" (onClause ("," onCase)*)? ("," elseCase)? ","? "}";
+
+onCase ->
+    "on" (type | expression) statement;
+elseCase ->
+    "else" statement;
+
 expression -> assignment;
 
-assignment -> logic_or | ( call "." )? IDENTIFIER "=" assignment;
+assignment -> type_is | ( call "." )? IDENTIFIER "=" assignment;
+type_is -> logic_or ("is" logic_or)*;
 logic_or -> logic_and ("or" logic_and)*;
 logic_and -> equality ("and" equality)*;
 equality -> comparison (("==" | "!=") comparison)*;
@@ -75,14 +88,27 @@ comparison -> term ((">" | ">=" | "<" | "<=") term)*;
 term -> factor (("-" | "+") factor)*;
 factor -> unary (("/" | "*") unary)*;
 unary -> ("!" | "-") (unary | call);
-call -> primary (("(" arguments? ")") | ("." IDENTIFIER))*;
+call -> access (("(" arguments? ")") | ("[" expression "]") | ("." IDENTIFIER))*;
+access ->
+    primary ("?" namespacedIdentifier?)?;
 
 arguments ->
     expression ("," expression)* ","?;
 primary ->
-    "true" | "false" | "void" | "self"
-    | NUMBER | STRING | IDENTIFIER
-    | "(" expression ")";
+    "true" | "false" | "void" | "self" |
+    NUMBER | STRING | CHAR | constructor |
+    "(" expression ")";
+
+constructor ->
+    namespacedIdentifier ("{"
+        fieldConstructor?
+        ("," fieldConstructor)*
+        ","?
+    "}")?;
+fieldConstructor ->
+    IDENTIFIER (":" expression)?;
+namespacedIdentifier ->
+    IDENTIFIER ("::" IDENTIFIER)*;
 ```
 
 # Lexical grammar
@@ -93,6 +119,8 @@ NUMBER ->
     DIGIT+ ( "." DIGIT+ )? ;
 STRING ->
     "\"" <any char except "\"">* "\"" ;
+CHAR ->
+    "'" <any char except "'"> "'";
 IDENTIFIER ->
     ALPHA ( ALPHA | DIGIT )* ;
 ALPHA ->

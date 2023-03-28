@@ -3,7 +3,7 @@ fn main(args: [str]) -> i32 {
         std::io::println("something");
     }
 
-    for i in range(0, 10) {
-        std::io::println("something");
+    for a in args {
+        std::io::println("arg: " + a);
     }
 }

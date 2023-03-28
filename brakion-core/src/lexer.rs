@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::tokens::Token;
 use crate::tokens::TokenKind;
 use crate::unit::Location;
@@ -18,7 +19,8 @@ pub trait TokenProducer<'u> {
 }
 
 #[derive(Debug)]
-pub struct Lexer<'u> {
+pub struct Lexer<'u, 'c> {
+    config: &'c Config,
     unit: &'u mut Unit<'u>,
     current: Option<char>,
     start: usize,
@@ -29,13 +31,21 @@ pub struct Lexer<'u> {
     current_line_start_in_bytes: usize,
     start_column: usize,
     current_column: usize,
+    line_ending_style: Option<LineEndingStyle>,
     emitted_eof: bool,
 }
 
-impl<'u> Lexer<'u> {
-    pub fn new(unit: &'u mut Unit<'u>) -> Self {
+#[derive(Debug)]
+enum LineEndingStyle {
+    Lf,
+    Crlf,
+}
+
+impl<'u, 'c> Lexer<'u, 'c> {
+    pub fn new(unit: &'u mut Unit<'u>, config: &'c Config) -> Self {
         let current = unit.read();
         Self {
+            config,
             unit,
             current,
             start: 0,
@@ -46,6 +56,7 @@ impl<'u> Lexer<'u> {
             current_line_start_in_bytes: 0,
             start_column: 1,
             current_column: 1,
+            line_ending_style: None,
             emitted_eof: false,
         }
     }
@@ -87,14 +98,59 @@ impl<'u> Lexer<'u> {
         }
     }
 
+    fn handle_line_ending(&mut self) {
+        if self.line_ending_style.is_none() {
+            match self.current {
+                Some('\r') => self.line_ending_style = Some(LineEndingStyle::Crlf),
+                Some('\n') => self.line_ending_style = Some(LineEndingStyle::Lf),
+                _ => unreachable!(),
+            }
+        }
+
+        match self.line_ending_style {
+            Some(LineEndingStyle::Crlf) => {
+                match self.current {
+                    Some('\r') => {
+                        self.advance();
+                    }
+                    _ => panic!("File has inconsistent line endings"), // TODO: handle error
+                }
+
+                match self.current {
+                    Some('\n') => {
+                        self.advance();
+                    }
+                    _ => panic!("File has inconsistent line endings"), // TODO: handle error
+                }
+
+                self.current_line += 1;
+                self.current_column = 1;
+                self.current_line_start_in_bytes = self.current_pos_in_bytes;
+            }
+            Some(LineEndingStyle::Lf) => {
+                match self.current {
+                    Some('\n') => {
+                        self.advance();
+                    }
+                    _ => panic!("File has inconsistent line endings"), // TODO: handle error
+                }
+
+                self.current_line += 1;
+                self.current_column = 1;
+                self.current_line_start_in_bytes = self.current_pos_in_bytes;
+            }
+            _ => unreachable!(),
+        }
+    }
+
     fn skip_whitespace(&mut self) {
         while let Some(c) = self.current {
             match c {
-                ' ' | '\r' | '\t' => {
+                ' ' | '\t' => {
                     self.advance();
                 }
-                '\n' => {
-                    self.advance();
+                '\n' | '\r' => {
+                    self.handle_line_ending();
                     self.start_line = self.current_line;
                     self.start_column = self.current_column;
                 }
@@ -188,12 +244,19 @@ impl<'u> Lexer<'u> {
             return None;
         }
         self.advance();
+
         while let Some(c) = self.advance() {
             if c == '"' {
                 return Some(Token::new(
                     TokenKind::String(
                         self.unit.code[self.start + 1..self.current_pos - 1].to_string(),
                     ),
+                    self.span(),
+                ));
+            }
+            if self.current_pos - self.start > self.config.max_string_length {
+                return Some(Token::new(
+                    TokenKind::Error("String too long.".to_string()),
                     self.span(),
                 ));
             }
@@ -235,6 +298,8 @@ impl<'u> Lexer<'u> {
         if self.current.is_none() || !self.current.unwrap().is_ascii_digit() {
             return None;
         }
+
+        // TODO: limit the length of numbers + manually parse them
 
         while let Some(c) = self.current {
             if c.is_ascii_digit() {
@@ -283,6 +348,13 @@ impl<'u> Lexer<'u> {
                 self.advance();
             } else {
                 break;
+            }
+
+            if self.current_pos - self.start > self.config.max_identifier_length {
+                return Some(Token::new(
+                    TokenKind::Error("Identifier too long.".to_string()),
+                    self.span(),
+                ));
             }
         }
         let text = &self.unit.code[self.start..self.current_pos];
@@ -352,7 +424,7 @@ impl<'u> Lexer<'u> {
     }
 }
 
-impl<'u> TokenProducer<'u> for Lexer<'u> {
+impl<'u, 'c> TokenProducer<'u> for Lexer<'u, 'c> {
     fn next(&mut self) -> Option<Token<'u>> {
         self.next_token()
     }

@@ -1,0 +1,498 @@
+type Value {
+    Integer {
+        value: i32,
+    }
+    Boolean {
+        value: bool,
+    }
+}
+
+impl std::Display for Value {
+    pub fn display(self) -> str {
+        match self {
+            on Self::Integer return self.value.to_string(),
+            on Self::Boolean return self.value.to_string(),
+        }
+    }
+}
+
+type BinaryOperator {
+    Add;
+    Subtract;
+    Multiply;
+    Divide;
+    Equal;
+    NotEqual;
+    Greater;
+    GreaterEqual;
+    Less;
+    LessEqual;
+    And;
+    Or;
+
+    # Match: A block of patterns and statements that are matched against the value
+    # in order. All statements for all matching patterns are executed in order of
+    # appearance in the match block.
+    # If no patterns match, the else block is executed.
+    pub fn from_str(s: str) -> Self | void {
+        match s {
+            on "+"      return Self::Add,
+            on "-"      return Self::Subtract,
+            on "*"      return Self::Multiply,
+            on "/"      return Self::Divide,
+            on "=="      return Self::Equal,
+            on "!="     return Self::NotEqual,
+            on ">"      return Self::Greater,
+            on ">="     return Self::GreaterEqual,
+            on "<"      return Self::Less,
+            on "<="     return Self::LessEqual,
+            on "and"    return Self::And,
+            on "or"     return Self::Or,
+            else        return Maybe::None,
+        }
+    }
+
+    # Type-preconditoning: Resolved at call site
+    pub fn apply(self ? Self::Add, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
+        Value::Integer { value: left.value + right.value }
+    }
+
+    pub fn apply(self ? Self::Subtract, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
+        Value::Integer { value: left.value - right.value }
+    }
+
+    pub fn apply(self ? Self::Multiply, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
+        Value::Integer { value: left.value * right.value }
+    }
+
+    pub fn apply(self ? Self::Divide, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
+        Value::Integer { value: left.value / right.value }
+    }
+
+    pub fn apply(self ? Self::Equal, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
+        Value::Boolean { value: left.value == right.value }
+    }
+
+    pub fn apply(self ? Self::NotEqual, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
+        Value::Boolean { value: left.value != right.value }
+    }
+
+    pub fn apply(self ? Self::Greater, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
+        Value::Boolean { value: left.value > right.value }
+    }
+
+    pub fn apply(self ? Self::GreaterEqual, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
+        Value::Boolean { value: left.value >= right.value }
+    }
+
+    pub fn apply(self ? Self::Less, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
+        Value::Boolean { value: left.value < right.value }
+    }
+
+    pub fn apply(self ? Self::LessEqual, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
+        Value::Boolean { value: left.value <= right.value }
+    }
+
+    pub fn apply(self ? Self::Equal, left: Value ? Value::Boolean, right: Value ? Value::Boolean) -> Value | void {
+        Value::Boolean { value: left.value == right.value }
+    }
+
+    pub fn apply(self ? Self::NotEqual, left: Value ? Value::Boolean, right: Value ? Value::Boolean) -> Value | void {
+        Value::Boolean { value: left.value != right.value }
+    }
+
+    pub fn apply(self ? Self::And, left: Value ? Value::Boolean, right: Value ? Value::Boolean) -> Value | void {
+        Value::Boolean { value: left.value and right.value }
+    }
+
+    pub fn apply(self ? Self::Or, left: Value ? Value::Boolean, right: Value ? Value::Boolean) -> Value | void {
+        Value::Boolean { value: left.value or right.value }
+    }
+
+    # Catch-all if none of the other overloads match
+    pub fn apply(self, left: Value, right: Value) -> Value | void {
+        void
+    }
+}
+
+type UnaryOperator {
+    Negate;
+    Not;
+
+    pub fn from_str(s: str) -> Self | void {
+        match s {
+            on "-"      return Self::Negate,
+            on "not"    return Self::Not,
+            else        return void,
+        }
+    }
+
+    pub fn apply(self ? Self::Negate, value: Value ? Value::Integer) -> Value | void {
+        Value::Integer { value: -value.value }
+    }
+
+    pub fn apply(self ? Self::Not, value: Value ? Value::Boolean) -> Value | void {
+        Value::Boolean { value: !value.value }
+    }
+
+    pub fn apply(self, value: Value) -> Value | void {
+        void
+    }
+}
+
+type Value {
+    Integer {
+        value: i32,
+    }
+    Boolean {
+        value: bool,
+    }
+
+    pub fn from_str(s: str) -> Self | void {
+        match s {
+            on s.is_digit()   return Self::Integer { value: i32::parse(s) }),
+            on "true"           return Self::Boolean { value: true },
+            on "false"          return Self::Boolean { value: false },
+            else                return void,
+        }
+    }
+}
+
+type Parenthesis {
+    Open;
+    Close;
+
+    pub fn from_str(s: str) -> Self | void {
+        match s {
+            on "("  return Self::Open,
+            on ")"  return Self::Close,
+            else    return void,
+        }
+    }
+}
+
+type Token {
+    self {
+        value: Value | BinaryOperator | UnaryOperator | Parenthesis,
+    }
+}
+
+type Expression {
+    Unary {
+        operator: Unary,
+        operand: Expression,
+    }
+    Binary {
+        operator: Binary,
+        left: Expression,
+        right: Expression,
+    }
+    Value {
+        value: Value,
+    }
+
+    pub fn evaluate(self) -> Value | void {
+        match self {
+            on Self::Unary {
+                return self.operator.apply(self.operand.evaluate())
+            }
+            on Self::Binary {
+                return self.operator.apply(self.left.evaluate(), self.right.evaluate())
+            }
+            on Self::Value {
+                return self.value
+            }
+            # No else clause: Only possible if at compile time, the match is deemed exhaustive
+        }
+    }
+}
+
+type Lexer {
+    self {
+        source: str,
+        tokens: [Token],
+        current: i32,
+    }
+
+    pub fn new(source: str) -> Self {
+        Self {
+            source,
+            tokens: [],
+            current: 0,
+        }
+    }
+
+    pub fn lex(self) -> [Token] {
+        while self.current < self.source.len() {
+            self.lex_token();
+        }
+
+        self.tokens
+    }
+
+    fn skip_whitespace(self) {
+        while self.source[self.current].is_whitespace() {
+            self.current += 1;
+        }
+    }
+
+    fn advance(self) {
+        self.current += 1;
+    }
+
+    fn lex_token(self) {
+        var c = self.source[self.current];
+
+        self.skip_whitespace();
+
+        match c {
+            on '(' self.tokens.push(Token { value: Parenthesis::Open }),
+            on ')' self.tokens.push(Token { value: Parenthesis::Close }),
+            on '+' self.tokens.push(Token { value: BinaryOperator::Add }),
+            on '-' self.tokens.push(Token { value: BinaryOperator::Subtract }),
+            on '*' self.tokens.push(Token { value: BinaryOperator::Multiply }),
+            on '/' self.tokens.push(Token { value: BinaryOperator::Divide }),
+            on '=' {
+                self.advance();
+                if self.source[self.current] == '=' {
+                    self.tokens.push(Token { value: BinaryOperator::Equal });
+                } else {
+                    # TODO: Error
+                }
+            }
+            on '!' {
+                self.advance();
+                if self.source[self.current] == '=' {
+                    self.tokens.push(Token { value: BinaryOperator::NotEqual });
+                } else {
+                    self.tokens.push(Token { value: UnaryOperator::Not });
+                }
+            }
+            on c.is_digit() {
+                var start = self.current;
+                while self.source[self.current].is_integer() {
+                    self.advance();
+                }
+                self.tokens.push(Token { value: Value::from_str(self.source.substr(start, self.current)) });
+            }
+            on c.is_alpha() {
+                var start = self.current;
+                while self.source[self.current].is_alpha() {
+                    self.advance();
+                }
+                var substr = self.source.substr(start, self.current);
+                var value = Value::from_str(substr);
+                if value {
+                    self.tokens.push(Token { value });
+                } else {
+                    var operator = BinaryOperator::from_str(substr);
+                    if operator {
+                        self.tokens.push(Token { value: operator });
+                    } else {
+                        var operator = UnaryOperator::from_str(substr);
+                        if operator {
+                            self.tokens.push(Token { value: operator });
+                        } else {
+                            # TODO: Error
+                        }
+                    }
+                }
+            }
+            else {
+                self.advance();
+                # TODO: Error
+            }
+        }
+    }
+}
+
+type Parser {
+    self {
+        tokens: [Token],
+        index: i32,
+    }
+
+    pub fn new(tokens: [Token]) -> Self {
+        Self {
+            tokens: tokens,
+            index: 0,
+        }
+    }
+
+    fn current_token(self) -> Token {
+        return self.tokens[self.index];
+    }
+
+    fn match_token(self, token: Token) -> bool {
+        return self.current_token() == token;
+    }
+
+    pub fn parse(self) -> Expression | void {
+        self.current_token = self.tokens[0];
+        return self.parse_expression();
+    }
+
+    fn advance(self) {
+        self.index += 1;
+    }
+
+    fn parse_expression(self) -> Expression | void {
+        return self.parse_or();
+    }
+
+    fn parse_or(self) -> Expression | void {
+        var left = self.parse_and();
+
+        while self.current_token().value is BinaryOperator::Or {
+            var operator = self.current_token.value;
+            self.advance();
+            var right = self.parse_and();
+            left = Expression::Binary {
+                operator: operator,
+                left: left,
+                right: right,
+            };
+        }
+        return left;
+    }
+
+    fn parse_and(self) -> Expression | void {
+        var left = self.parse_equality();
+
+        while self.current_token().value is BinaryOperator::And {
+            var operator = self.current_token.value;
+            self.advance();
+            var right = self.parse_equality();
+            left = Expression::Binary {
+                operator,
+                left,
+                right,
+            };
+        }
+        return left;
+    }
+
+    fn parse_equality(self) -> Expression | void {
+        var left = self.parse_comparison();
+
+        while self.current_token().value is BinaryOperator::Equal
+            || self.current_token().value is BinaryOperator::NotEqual {
+            var operator = self.current_token.value;
+            self.advance();
+            var right = self.parse_comparison();
+            left = Expression::Binary {
+                operator,
+                left,
+                right,
+            };
+        }
+        return left;
+    }
+
+    fn parse_comparison(self) -> Expression | void {
+        var left = self.parse_addition();
+
+        while self.current_token().value is BinaryOperator::Greater
+            || self.current_token().value is BinaryOperator::GreaterEqual
+            || self.current_token().value is BinaryOperator::Less
+            || self.current_token().value is BinaryOperator::LessEqual {
+            var operator = self.current_token.value;
+            self.advance();
+            var right = self.parse_addition();
+            left = Expression::Binary {
+                operator,
+                left,
+                right,
+            };
+        }
+        return left;
+    }
+
+    fn parse_addition(self) -> Expression | void {
+        var left = self.parse_multiplication();
+
+        while self.current_token().value is BinaryOperator::Add
+            || self.current_token().value is BinaryOperator::Subtract {
+            var operator = self.current_token.value;
+            self.advance();
+            var right = self.parse_multiplication();
+            left = Expression::Binary {
+                operator,
+                left,
+                right,
+            };
+        }
+        return left;
+    }
+
+    fn parse_multiplication(self) -> Expression | void {
+        var left = self.parse_unary();
+
+        while self.current_token().value is BinaryOperator::Multiply
+            || self.current_token().value is BinaryOperator::Divide {
+            var operator = self.current_token.value;
+            self.advance();
+            var right = self.parse_unary();
+            left = Expression::Binary {
+                operator,
+                left,
+                right,
+            };
+        }
+        return left;
+    }
+
+    fn parse_unary(self) -> Expression | void {
+        if self.current_token().value is UnaryOperator {
+            var operator = self.current_token().value;
+            self.advance();
+            var operand = self.parse_unary();
+            return Expression::Unary {
+                operator,
+                operand,
+            };
+        }
+        return self.parse_primary();
+    }
+
+    fn parse_primary(self) -> Expression | void {
+        var token = self.current_token();
+        if token.value is Value {
+            self.advance();
+            return Expression::Value {
+                value: token.value,
+            };
+        }
+
+        if token.value is Parenthesis::Open {
+            self.advance();
+            var expression = self.parse_expression();
+            if self.current_token().value is Parenthesis::Close {
+                self.advance().unwrap;
+                return expression;
+            }
+        }
+
+        return void;
+    }
+}
+
+
+fn main(args: [str]) {
+    var source = "1 + 2 * 3";
+    var lexer = Lexer::new(source);
+    var tokens = lexer.lex();
+    var parser = Parser::new(tokens);
+    var expression = parser.parse();
+
+    if expression {
+        var value = expression.evaluate();
+        if value {
+            std::io::println(value.to_str());
+        } else {
+            std::io::println("Error: Didn't evaluate to a value");
+        }
+    } else {
+        std::io::println("Error: Didn't parse");
+    }
+}
