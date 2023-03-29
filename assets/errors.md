@@ -28,4 +28,4 @@ runtime error: Undefined variable 'b'
   |
 ```
 
-![img](assets/error_example.png)
+![img](/assets/error_example.png)
