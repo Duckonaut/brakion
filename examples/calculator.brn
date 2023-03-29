@@ -40,7 +40,7 @@ type BinaryOperator {
             on "-"      return Self::Subtract,
             on "*"      return Self::Multiply,
             on "/"      return Self::Divide,
-            on "=="      return Self::Equal,
+            on "=="     return Self::Equal,
             on "!="     return Self::NotEqual,
             on ">"      return Self::Greater,
             on ">="     return Self::GreaterEqual,
