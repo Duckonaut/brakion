@@ -1,8 +1,34 @@
-# Initial documentation
+# Brakion Language
+## Usage
+The language interpreter lives in a Rust crate, `brakion-core`, with the interpreter and
+a `Brakion` struct that can be used from outside code.
+
+The user will mainly interact with it from the CLI using the `brakion` binary crate,
+which will support operations like
+
+- `brakion run <FILES>`: Runs the program assembled from one or several files, with
+  the requirement of there only being one `main` function across them. If `FILES` is `-`, treat `stdin` as the source
+- `brakion check [ARGUMENTS] <FILES>`: Checks the program up to the stage specified by arguments
+  and print whatever helpful information it can gather, i.e. the token list, the AST, the namespace tree, etc.
+- `brakion shell`: Runs in interactive mode, interpreting input as you go along, line by line. Intended for
+  debug purposes.
+
+The project is built with `cargo`, and since `brakion` is the only binary target, you can use `cargo run -- {BRAKION ARGS}`
+to test it without going through `cargo build` or `cargo build --release` or `cargo install --path ./brakion`
+
+## Testing
+For unit testing, the normal Rust test system provided by `cargo` will be used and can be ran as `cargo test`.
+For full end to end testing, there will be a directory of tests and their expected outputs with a simple script for
+running and comparing them.
+
 ## Architecture
 The language interpreter will be written in Rust. It will support running one
 instance from multiple files at once, provided that only one `main` function
 exists across all of them.
+
+The repository is structured as a workspace with 2 main crates (so far):
+    - `brakion`: The CLI for the interpreter
+    - `brakion-core`: The library crate containing the actual interpreter.
 
 The interpreter consists of 4 main stages:
 - Lexer
