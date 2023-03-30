@@ -41,7 +41,7 @@ The main structs in use in the interpreter are:
   accurate and helpful error messages, and if it gets more than zero errors in a stage, signals
   the need to ignore the further stages.
     - Example errors, taken from my earlier private programming language project. I plan to reuse
-      a lot of that error handler since it produces nice errors.
+      a lot of that error handler since it produces nice errors.</br>
       ![error_screenshot](assets/error_example.png)
 
 
