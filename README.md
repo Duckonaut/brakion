@@ -10,8 +10,6 @@ which will support operations like
   the requirement of there only being one `main` function across them. If `FILES` is `-`, treat `stdin` as the source
 - `brakion check [ARGUMENTS] <FILES>`: Checks the program up to the stage specified by arguments
   and print whatever helpful information it can gather, i.e. the token list, the AST, the namespace tree, etc.
-- `brakion shell`: Runs in interactive mode, interpreting input as you go along, line by line. Intended for
-  debug purposes.
 
 The project is built with `cargo`, and since `brakion` is the only binary target, you can use `cargo run -- {BRAKION ARGS}`
 to test it without going through `cargo build` or `cargo build --release` or `cargo install --path ./brakion`
@@ -124,18 +122,6 @@ matches a previously used name, it is replaced in the following code.
 Name shadowing is not allowed on functions, classes or traits.
 
 ### Static typing
-Relevant grammar:
-```
-varStmt =
-    "var", typedIdentifier, "=", expression;
-typedIdentifier =
-    IDENTIFIER, ":", type;
-type =
-    typePrimary, {"|", typePrimary};
-typePrimary =
-    namespacedIdentifier | ("[", type, "]");
-```
-
 Examples:
 ```
 var a: i32 = 5;             # Arithmetic types: i8, i16, i32, i64, u8, u16, u32, u64, f32, f64
@@ -163,37 +149,7 @@ Supported operators in order of precedence (lowest to highest). Operators on the
 | `as`                  | `a as i32`        | Value of type `i32` or `void` |
 | `-`, `!`              | `-a`, `!a`        | `-` type of `a`, `!` `bool`   |
 
-Relevant grammar
-```
-assignment = ([call, "."], IDENTIFIER, "=", assignment) | logicOr;
-logicOr = logicAnd, ["or", logicAnd];
-logicAnd = equality, ["and", equality];
-equality = typeIs, [("==" | "!="), typeIs];
-typeIs = comparison, ["is", comparison];
-comparison = term, [(">" | ">=" | "<" | "<="), term];
-term = factor, [("-" | "+"), factor];
-factor = cast, [("/" | "*"), cast];
-cast = unary, ["as", unary];
-unary = (("!" | "-"), unary) | primary;
-```
-
 ### Control flow features
-Relevant grammar:
-```
-forStmt =
-    "for", IDENTIFIER, "in", expression, executableBlock;
-ifStmt =
-    "if", expression, statement, ["else", statement];
-returnStmt =
-    "return", [expression], ";";
-whileStmt =
-    "while", expression, statement;
-breakStmt =
-    "break", ";";
-continueStmt =
-    "continue", ";";
-```
-
 Examples:
 ```
 var x: u32 = 42;
@@ -218,14 +174,6 @@ To check a variable for its variant, one of 3 ways can be used:
         - `a?Foo.method()` calls a method on `a` only if `a` is `Foo`
         - Can be omitted if `method` has the equivalent outward-facing signature (differing only in the type of `self`) for *all* variants
     - The function argument preconditions, discussed below.
-
-Relevant grammar
-```
-coalesceAccess = primary, "?", type;
-typeIs = comparison, ["is", comparison];
-functionParameter =
-    typedIdentifier, ["?", type];
-```
 
 ### Match
 The `match` statement creates a block of `on` cases. It can optionally have a
@@ -334,23 +282,6 @@ possible combinations covered, and is collapsed to a single function.
 Omitting preconditions acts as a catch-all for that argument. If a conflict in
 resolution is detected, it should be caught during the validation phase.
 
-Relevant grammar
-```
-function =
-    functionSignature, executableBlock;
-
-functionSignature =
-    visibility, "fn", IDENTIFIER, "(" [functionParameters] ")", [returnType];
-functionParameters =
-    (functionParameter | "self"), {",", functionParameter};
-functionParameter =
-    typedIdentifier, ["?", type];
-typedIdentifier =
-    IDENTIFIER, ":", type;
-returnType =
-    "->", type;
-```
-
 Examples:
 ```
 type Value {
@@ -384,18 +315,6 @@ If you want to define a type as an "atomic" type, without any variants,
 it's defined by a special variant name `self` that can only be defined
 if it's the only variant.
 
-Relevant grammar:
-```
-typeDeclaration =
-    visibility, "type", IDENTIFIER, ( typeDefinition | ";" );
-typeDefinition =
-    "{", {variantDeclaration}, {function}, "}";
-variantDeclaration =
-    IDENTIFIER, variantDefinition;
-variantDefinition =
-    ";" | ("{", typedIdentifier, {"," typedIdentifier}, [","], "}");
-```
-
 Example:
 ```
 type Vector2 {
@@ -413,22 +332,6 @@ type Vector2 {
 A type can be constructed by specifying all the values of its fields. For optional args, static methods on the type should be used
 A field name can be omitted if the name of the variable being used to fill a field is the same as the name of the field.
 
-Relevant grammar:
-```
-constructor =
-    namespacedIdentifier, [
-        "{",
-        [
-            fieldConstructor,
-            {",", fieldConstructor},
-            [","]
-        ],
-        "}"
-    ];
-fieldConstructor 
-    IDENTIFIER, [":", expression];
-```
-
 Examples:
 ```
 Value::Integer { value: 98 }
@@ -438,17 +341,6 @@ Value::Integer { value: 98 }
 Without inheritance, for sharing interfaces/code between specific types interfaces can be used.
 
 They are implemented for each type in a separate block from its definition.
-
-Relevant grammar:
-```
-traitDeclaration =
-    visibility, "trait", IDENTIFIER, "{", {functionStub}, "}";
-traitImplementation =
-    "impl", namespacedIdentifier, "for", IDENTIFIER, "{", {function}, "}";
-
-functionStub =
-    functionSignature, ";";
-```
 
 Example:
 ```
@@ -492,7 +384,7 @@ comment =
     "#", COMMENT, EOL;
 
 declaration =
-    visibility, (module | function | typeDeclaration | traitDeclaration) traitImplementation;
+    (visibility, (module | function | typeDeclaration | traitDeclaration)) | traitImplementation;
 module =
     "mod", IDENTIFIER, "{", {declaration}, "}";
 function =
@@ -535,8 +427,10 @@ executableBlock =
     "{", {statement} "}";
 
 statement =
-    | varStmt | forStmt | ifStmt | returnStmt | whileStmt | matchStmt | breakStmt | continueStmt | executableBlock;
+    varStmt | forStmt | ifStmt | returnStmt | whileStmt | matchStmt | breakStmt | continueStmt | executableBlock | assignmentStmt;
 
+assignmentStmt =
+    expression, "=", expression;
 varStmt =
     "var", typedIdentifier, "=", expression;
 forStmt =
@@ -608,10 +502,10 @@ namespacedIdentifier =
 listInitializer =
     "[", [expression], {",", expression}, [","], "]";
 
-primary = ("(", expression, ")") | literal | constructor | call | listAccess | coalesceAccess | fieldAccess;
+primary = ("(", expression, ")") | literal | accessOrConstructorOrCallOrListAccessOrFieldAccess;
 
 literal =
-    "true" | "false" | "void" | "self" |
+    "true" | "false" | "void" | "self" | listInitializer |
     NUMBER | STRING | CHAR;
 
 NUMBER =
