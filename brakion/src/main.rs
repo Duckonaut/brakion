@@ -1,4 +1,4 @@
-use std::io::stdin;
+use std::{io::stdin, path::PathBuf};
 
 use brakion_core::interpret;
 use clap::Parser;
@@ -11,18 +11,16 @@ use clap::Parser;
 )]
 struct Args {
     #[clap(help = "The file to interpret")]
-    file: Option<String>,
+    file: PathBuf,
 }
 
 fn main() {
     let args = Args::parse();
+    let config = brakion_core::Config::default();
 
-    if let Some(filepath) = args.file {
-        let file = std::fs::File::open(filepath.clone()).expect("Could not open file");
-        let reader = std::io::BufReader::new(file);
-        interpret(filepath, reader);
-    } else {
-        let reader = std::io::BufReader::new(stdin());
-        interpret("<stdin>".into(), reader);
-    }
+    let filepath = args.file;
+
+    let file = std::fs::File::open(filepath.clone()).expect("Could not open file");
+    let reader = std::io::BufReader::new(file);
+    interpret(filepath.as_os_str().to_string_lossy().to_string(), reader, config);
 }
