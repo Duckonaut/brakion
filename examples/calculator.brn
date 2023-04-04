@@ -54,65 +54,63 @@ type BinaryOperator {
 
     # Type-preconditoning: Resolved at call site
     pub fn apply(self ? Self::Add, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
-        Value::Integer { value: left.value + right.value }
+        return Value::Integer { value: left.value + right.value };
     }
 
     pub fn apply(self ? Self::Subtract, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
-        Value::Integer { value: left.value - right.value }
+        return Value::Integer { value: left.value - right.value };
     }
 
     pub fn apply(self ? Self::Multiply, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
-        Value::Integer { value: left.value * right.value }
+        return Value::Integer { value: left.value * right.value };
     }
 
     pub fn apply(self ? Self::Divide, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
-        Value::Integer { value: left.value / right.value }
+        return Value::Integer { value: left.value / right.value };
     }
 
     pub fn apply(self ? Self::Equal, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
-        Value::Boolean { value: left.value == right.value }
+        return Value::Boolean { value: left.value == right.value };
     }
 
     pub fn apply(self ? Self::NotEqual, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
-        Value::Boolean { value: left.value != right.value }
+        return Value::Boolean { value: left.value != right.value };
     }
 
     pub fn apply(self ? Self::Greater, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
-        Value::Boolean { value: left.value > right.value }
+        return Value::Boolean { value: left.value > right.value };
     }
 
     pub fn apply(self ? Self::GreaterEqual, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
-        Value::Boolean { value: left.value >= right.value }
+        return Value::Boolean { value: left.value >= right.value };
     }
 
     pub fn apply(self ? Self::Less, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
-        Value::Boolean { value: left.value < right.value }
+        return Value::Boolean { value: left.value < right.value };
     }
 
     pub fn apply(self ? Self::LessEqual, left: Value ? Value::Integer, right: Value ? Value::Integer) -> Value | void {
-        Value::Boolean { value: left.value <= right.value }
+        return Value::Boolean { value: left.value <= right.value };
     }
 
     pub fn apply(self ? Self::Equal, left: Value ? Value::Boolean, right: Value ? Value::Boolean) -> Value | void {
-        Value::Boolean { value: left.value == right.value }
+        return Value::Boolean { value: left.value == right.value };
     }
 
     pub fn apply(self ? Self::NotEqual, left: Value ? Value::Boolean, right: Value ? Value::Boolean) -> Value | void {
-        Value::Boolean { value: left.value != right.value }
+        return Value::Boolean { value: left.value != right.value };
     }
 
     pub fn apply(self ? Self::And, left: Value ? Value::Boolean, right: Value ? Value::Boolean) -> Value | void {
-        Value::Boolean { value: left.value and right.value }
+        return Value::Boolean { value: left.value and right.value };
     }
 
     pub fn apply(self ? Self::Or, left: Value ? Value::Boolean, right: Value ? Value::Boolean) -> Value | void {
-        Value::Boolean { value: left.value or right.value }
+        return Value::Boolean { value: left.value or right.value };
     }
 
     # Catch-all if none of the other overloads match
-    pub fn apply(self, left: Value, right: Value) -> Value | void {
-        void
-    }
+    pub fn apply(self, left: Value, right: Value) -> Value | void { }
 }
 
 type UnaryOperator {
@@ -128,16 +126,14 @@ type UnaryOperator {
     }
 
     pub fn apply(self ? Self::Negate, value: Value ? Value::Integer) -> Value | void {
-        Value::Integer { value: -value.value }
+        return Value::Integer { value: -value.value };
     }
 
     pub fn apply(self ? Self::Not, value: Value ? Value::Boolean) -> Value | void {
-        Value::Boolean { value: !value.value }
+        return Value::Boolean { value: !value.value };
     }
 
-    pub fn apply(self, value: Value) -> Value | void {
-        void
-    }
+    pub fn apply(self, value: Value) -> Value | void { }
 }
 
 type Value {
@@ -227,7 +223,7 @@ type Lexer {
             self.lex_token();
         }
 
-        self.tokens
+        return self.tokens;
     }
 
     fn skip_whitespace(self) {

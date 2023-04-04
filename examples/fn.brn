@@ -1,1 +1,1 @@
-fn main() { println("Hello, world!"); }
+fn main() { std::io::println("Hello, world!"); }

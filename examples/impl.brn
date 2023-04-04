@@ -5,7 +5,5 @@ trait Bar {
 }
 
 impl Bar for Foo {
-    fn baz() -> void {
-        void
-    }
+    fn baz() -> void { }
 }
