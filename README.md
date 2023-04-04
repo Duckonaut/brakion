@@ -492,20 +492,20 @@ comment =
     "#", COMMENT, EOL;
 
 declaration =
-    module | function | typeDeclaration | traitDeclaration | traitImplementation;
+    visibility, (module | function | typeDeclaration | traitDeclaration) traitImplementation;
 module =
-    visibility, "mod", IDENTIFIER, "{", {declaration}, "}";
+    "mod", IDENTIFIER, "{", {declaration}, "}";
 function =
-    functionSignature, executableBlock;
+    executableBlock;
 typeDeclaration =
-    visibility, "type", IDENTIFIER, ( typeDefinition | ";" );
+    "type", IDENTIFIER, ( typeDefinition | ";" );
 traitDeclaration =
-    visibility, "trait", IDENTIFIER, "{", {functionStub}, "}";
+    "trait", IDENTIFIER, "{", {functionStub}, "}";
 traitImplementation =
     "impl", namespacedIdentifier, "for", IDENTIFIER, "{", {function}, "}";
 
 functionSignature =
-    visibility, "fn", IDENTIFIER, "(" [functionParameters] ")", [returnType];
+    "fn", IDENTIFIER, "(" [functionParameters] ")", [returnType];
 functionStub =
     functionSignature, ";";
 functionParameters =
@@ -535,7 +535,7 @@ executableBlock =
     "{", {statement} "}";
 
 statement =
-    (expression, ";") | varStmt | forStmt | ifStmt | returnStmt | whileStmt | matchStmt | breakStmt | continueStmt | executableBlock;
+    | varStmt | forStmt | ifStmt | returnStmt | whileStmt | matchStmt | breakStmt | continueStmt | executableBlock;
 
 varStmt =
     "var", typedIdentifier, "=", expression;
@@ -555,16 +555,15 @@ continueStmt =
     "continue", ";";
 
 matchBody =
-    "{", [onClause, {",", onCase}], ["," elseCase], [","], "}";
+    "{", {onCase}, [elseCase], "}";
 
 onCase =
     "on", (type | expression), statement;
 elseCase =
     "else", statement;
 
-expression = assignment;
+expression = logicOr;
 
-assignment = ([call, "."], IDENTIFIER, "=", assignment) | logicOr;
 logicOr = logicAnd, ["or", logicAnd];
 logicAnd = equality, ["and", equality];
 equality = typeIs, [("==" | "!="), typeIs];
@@ -572,18 +571,20 @@ typeIs = comparison, ["is", comparison];
 comparison = term, [(">" | ">=" | "<" | "<="), term];
 term = factor, [("-" | "+"), factor];
 factor = cast, [("/" | "*"), cast];
-cast = unary, ["as", unary];
-unary = (("!" | "-"), unary) | primary;
+cast = unary, ["as", type];
+unary = {"!" | "-"}, primary;
 
 arguments =
     expression, {",", expression}, [","];
 
-call = primary, "(", [arguments], ")";
-listAccess = primary, "[", expression, "]";
-coalesceAccess = primary, "?", type;
-fieldAccess = primary, {".", IDENTIFIER};
+fieldAccess = primary, ; // WEIRD SHIT
 
-constructor =
+call = "(", [arguments], ")";
+listAccess = "[", expression, "]";
+fieldAccess = ".", IDENTIFIER;
+coalesceAccess = "?", type;
+
+accessOrConstructorOrCallOrListAccessOrFieldAccess =
     namespacedIdentifier, [
         "{",
         [
@@ -592,7 +593,13 @@ constructor =
             [","]
         ],
         "}"
-    ];
+    ],
+    {
+        call |
+        listAccess |
+        fieldAccess |
+        coalesceAccess
+    };
 fieldConstructor 
     IDENTIFIER, [":", expression];
 namespacedIdentifier =
@@ -601,7 +608,7 @@ namespacedIdentifier =
 listInitializer =
     "[", [expression], {",", expression}, [","], "]";
 
-primary = ("(", expression, ")") | literal | listInitializer | constructor | call | listAccess | coalesceAccess | fieldAccess;
+primary = ("(", expression, ")") | literal | constructor | call | listAccess | coalesceAccess | fieldAccess;
 
 literal =
     "true" | "false" | "void" | "self" |
