@@ -1,22 +1,71 @@
-use std::io::Read;
+use std::sync::{Arc, Mutex};
 
+use errors::ErrorModuleRef;
+use filters::ParserTokenFilter;
 use lexer::TokenProducer;
-use unit::{UnitIdentifier, ReadSeek};
+use unit::{ReadSeek, Unit, UnitIdentifier, Units};
 
 pub use config::Config;
+pub use errors::ErrorModule;
 
+mod config;
+mod errors;
+mod filters;
 mod lexer;
 mod parser;
 mod tokens;
 mod unit;
-mod config;
 
-pub fn interpret<R: ReadSeek + 'static>(unit_name: UnitIdentifier, input: R, config: config::Config) {
-    let mut unit = unit::Unit::new(&unit_name, Box::new(input));
-    let mut lexer = lexer::Lexer::new(&mut unit, &config);
-    let mut filtered = lexer::ParserTokenFilter::new(&mut lexer);
+pub struct Brakion {
+    config: Config,
+    units: Units,
+    error_module: ErrorModuleRef,
+}
 
-    while let Some(token) = filtered.next() {
-        println!("{token}");
+impl Brakion {
+    pub fn new(config: Config) -> Self {
+        Self {
+            config,
+            units: Vec::new(),
+            error_module: Arc::new(Mutex::new(ErrorModule::new())),
+        }
+    }
+
+    pub fn add_unit<R: ReadSeek + 'static>(&mut self, name: String, input: R) {
+        let id = self.units.len();
+        self.units.push(Unit::new(name, id, Box::new(input)));
+    }
+
+    pub fn check(&mut self) -> Result<(), Vec<errors::Error>> {
+        for unit_id in 0..self.units.len() {
+            self.process_unit(unit_id);
+        }
+
+        let error_module = self.error_module.lock().unwrap();
+
+        if error_module.unrecoverable() {
+            error_module.dump(&self.units);
+            Err(error_module.errors())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn process_unit(&mut self, unit_id: UnitIdentifier) {
+        let unit = &mut self.units[unit_id];
+        let mut lexer = lexer::Lexer::new(unit, &self.config, self.error_module.clone());
+        let mut filtered = ParserTokenFilter::new(&mut lexer);
+
+        while let Some(token) = filtered.next() {
+            println!("{token}");
+        }
+    }
+
+    pub fn units(&self) -> &Units {
+        &self.units
+    }
+
+    pub fn unit(&self, id: UnitIdentifier) -> &Unit {
+        &self.units[id]
     }
 }
