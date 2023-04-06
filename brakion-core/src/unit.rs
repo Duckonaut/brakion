@@ -307,6 +307,16 @@ impl Span {
     pub fn new(unit: UnitIdentifier, start: Location, end: Location) -> Self {
         Self { unit, start, end }
     }
+
+    pub fn from_spans(start: Span, end: Span) -> Self {
+        assert_eq!(start.unit, end.unit);
+
+        Self {
+            unit: start.unit,
+            start: start.start,
+            end: end.end,
+        }
+    }
 }
 
 impl Display for Span {

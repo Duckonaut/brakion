@@ -87,7 +87,7 @@ impl ErrorModule {
                 let line_num = format!("{line_index: >line_max_len$} |").bright_blue();
 
                 writeln!(f, "{line_num} {line}")?;
-                if line_index == 0 && !placed_arrow {
+                if !placed_arrow {
                     write!(f, "{padding}")?;
                     writeln!(f, "{}{}", " ".repeat(span.start.column), "^".bright_red())?;
                     placed_arrow = true;
