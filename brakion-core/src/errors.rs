@@ -78,8 +78,7 @@ impl ErrorModule {
         if context.is_empty() {
             writeln!(f, "{} {}", span.start.line, " |".bright_blue())
         } else {
-            let padding = format!("{}{}", " ".repeat(line_max_len), " |".bright_blue());
-            let mut placed_arrow = false;
+            let padding = format!("{}{} ", " ".repeat(line_max_len), " |".bright_blue());
 
             writeln!(f, "{padding}")?;
             for (line_index, line) in context.iter().enumerate() {
@@ -87,10 +86,28 @@ impl ErrorModule {
                 let line_num = format!("{line_index: >line_max_len$} |").bright_blue();
 
                 writeln!(f, "{line_num} {line}")?;
-                if !placed_arrow {
+                if line_index == span.start.line && line_index == span.end.line {
                     write!(f, "{padding}")?;
-                    writeln!(f, "{}{}", " ".repeat(span.start.column), "^".bright_red())?;
-                    placed_arrow = true;
+                    writeln!(
+                        f,
+                        "{}{}",
+                        " ".repeat(span.start.column - 1),
+                        "^".repeat(span.end.column - span.start.column).bright_red()
+                    )?;
+                } else if line_index == span.start.line {
+                    write!(f, "{padding}")?;
+                    writeln!(
+                        f,
+                        "{}{}",
+                        " ".repeat(span.start.column - 1),
+                        "^".repeat(line.len() - span.start.column + 1).bright_red()
+                    )?;
+                } else if line_index == span.end.line {
+                    write!(f, "{padding}")?;
+                    writeln!(f, "{}", "^".repeat(span.end.column).bright_red())?;
+                } else {
+                    write!(f, "{padding}")?;
+                    writeln!(f, "{}", "^".repeat(line.len()).bright_red())?;
                 }
             }
             writeln!(f, "{padding}")?;

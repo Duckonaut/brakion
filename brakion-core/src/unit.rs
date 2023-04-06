@@ -104,7 +104,7 @@ impl Unit {
     // Returns up to `N` characters from the source code, and the debt amount. If at the end of the
     // source code, panics.
     fn utf8_safe_read<'a>(buffer: &'a [u8], source: &mut dyn ReadSeek) -> (&'a str, usize) {
-        match std::str::from_utf8(&buffer) {
+        match std::str::from_utf8(buffer) {
             Ok(s) => (s, 0),
             Err(e) => match e.error_len() {
                 // panic if invalid
@@ -112,7 +112,7 @@ impl Unit {
                 // of the file
                 Some(_) => panic!("Invalid UTF-8 sequence in source code"),
                 None => {
-                    let current_pos = source.seek(std::io::SeekFrom::Current(0)).unwrap();
+                    let current_pos = source.stream_position().unwrap();
 
                     let end_pos = source.seek(std::io::SeekFrom::End(0)).unwrap();
 
@@ -136,9 +136,6 @@ impl Unit {
 
     pub fn lines(&self, span: &Span) -> Vec<String> {
         assert!(span.unit == self.id);
-
-        let start = span.start;
-        let end = span.end;
 
         let start_line_byte_pos = span.start.line_start;
         let end_line_byte_pos = span.end.line_start;
@@ -195,7 +192,7 @@ impl Unit {
                     .collect::<Vec<String>>();
             }
 
-            let (s, debt) = Self::utf8_safe_read(&buffer[..read], &mut *source);
+            let (s, _) = Self::utf8_safe_read(&buffer[..read], &mut *source);
 
             let newline_pos = s.find('\n');
 
@@ -205,6 +202,8 @@ impl Unit {
                 lines.push_str(s);
             }
         }
+
+        source.seek(std::io::SeekFrom::Start(original_pos)).unwrap();
 
         lines
             .lines()
@@ -270,8 +269,6 @@ fn utf8_misalignment_end() {
 
     assert_eq!(bytes.len(), READ_INCREMENT);
 
-    let unit_name = "test";
-
     let bytes_reader = std::io::Cursor::new(bytes);
 
     let mut unit = Unit::new("test".to_string(), 0, Box::new(bytes_reader));
@@ -316,6 +313,11 @@ impl Span {
             start: start.start,
             end: end.end,
         }
+    }
+
+    pub fn is_in_span(&self, line: usize, column: usize) -> bool {
+        (line > self.start.line || (line == self.start.line && column >= self.start.column))
+            && (line < self.end.line || (line == self.end.line && column <= self.end.column))
     }
 }
 
