@@ -349,7 +349,7 @@ impl<'a> Lexer<'a> {
         loop {
             let c = self.advance();
 
-            if self.current == Some('\n') || c == Some('\r') {
+            if self.current == Some('\n') || self.current == Some('\r') {
                 self.handle_line_ending();
                 self.start_line = self.current_line;
                 self.start_column = self.current_column;
