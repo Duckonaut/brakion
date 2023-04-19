@@ -7,6 +7,10 @@ use crate::unit::Location;
 use crate::unit::Span;
 use crate::unit::Unit;
 
+// Macro for trying to match with multiple functions
+// If a function returns a token, the token is returned
+// If a function returns an error, the error is returned
+// If a function returns None, the next function is tried
 macro_rules! try_all_paths {
     () => {
         TokenizeResult::None
@@ -59,8 +63,11 @@ enum LineEndingStyle {
 
 #[derive(Debug)]
 enum TokenizeResult {
+    // A token was produced
     Some(Token),
+    // No valid token found
     None,
+    // An error occurred
     Error(LexerError),
 }
 
@@ -100,7 +107,7 @@ impl<'a> Lexer<'a> {
             self.char(),
             self.comment(),
             self.number(),
-            self.identifier(),
+            self.identifier_or_keyword(),
         );
 
         match token {
@@ -110,6 +117,7 @@ impl<'a> Lexer<'a> {
                     .lock()
                     .unwrap()
                     .add_lexer_error(error, self.span());
+
                 self.next_token()
             }
             TokenizeResult::None => match self.current {
@@ -242,48 +250,54 @@ impl<'a> Lexer<'a> {
 
     fn double_char_token(&mut self) -> TokenizeResult {
         match self.current {
-            Some(':') => {
+            Some(':') => TokenizeResult::Some(Token::new(
                 if self.match_next(':') {
-                    TokenizeResult::Some(Token::new(TokenKind::DoubleColon, self.span()))
+                    TokenKind::DoubleColon
                 } else {
-                    TokenizeResult::Some(Token::new(TokenKind::Colon, self.span()))
-                }
-            }
-            Some('-') => {
+                    TokenKind::Colon
+                },
+                self.span(),
+            )),
+            Some('-') => TokenizeResult::Some(Token::new(
                 if self.match_next('>') {
-                    TokenizeResult::Some(Token::new(TokenKind::Arrow, self.span()))
+                    TokenKind::Arrow
                 } else {
-                    TokenizeResult::Some(Token::new(TokenKind::Minus, self.span()))
-                }
-            }
-            Some('!') => {
+                    TokenKind::Minus
+                },
+                self.span(),
+            )),
+            Some('!') => TokenizeResult::Some(Token::new(
                 if self.match_next('=') {
-                    TokenizeResult::Some(Token::new(TokenKind::BangEqual, self.span()))
+                    TokenKind::BangEqual
                 } else {
-                    TokenizeResult::Some(Token::new(TokenKind::Bang, self.span()))
-                }
-            }
-            Some('=') => {
+                    TokenKind::Bang
+                },
+                self.span(),
+            )),
+            Some('=') => TokenizeResult::Some(Token::new(
                 if self.match_next('=') {
-                    TokenizeResult::Some(Token::new(TokenKind::EqualEqual, self.span()))
+                    TokenKind::EqualEqual
                 } else {
-                    TokenizeResult::Some(Token::new(TokenKind::Equal, self.span()))
-                }
-            }
-            Some('>') => {
+                    TokenKind::Equal
+                },
+                self.span(),
+            )),
+            Some('>') => TokenizeResult::Some(Token::new(
                 if self.match_next('=') {
-                    TokenizeResult::Some(Token::new(TokenKind::GreaterEqual, self.span()))
+                    TokenKind::GreaterEqual
                 } else {
-                    TokenizeResult::Some(Token::new(TokenKind::Greater, self.span()))
-                }
-            }
-            Some('<') => {
+                    TokenKind::Greater
+                },
+                self.span(),
+            )),
+            Some('<') => TokenizeResult::Some(Token::new(
                 if self.match_next('=') {
-                    TokenizeResult::Some(Token::new(TokenKind::LessEqual, self.span()))
+                    TokenKind::LessEqual
                 } else {
-                    TokenizeResult::Some(Token::new(TokenKind::Less, self.span()))
-                }
-            }
+                    TokenKind::Less
+                },
+                self.span(),
+            )),
             _ => TokenizeResult::None,
         }
     }
@@ -293,15 +307,15 @@ impl<'a> Lexer<'a> {
             return TokenizeResult::None;
         }
 
+        let mut text = String::new();
+
         while let Some(c) = self.advance() {
             if c == '"' {
-                return TokenizeResult::Some(Token::new(
-                    TokenKind::String(
-                        self.unit.code[self.start + 1..self.current_pos - 1].to_string(),
-                    ),
-                    self.span(),
-                ));
+                return TokenizeResult::Some(Token::new(TokenKind::String(text), self.span()));
             }
+
+            text.push(c);
+
             if self.current_pos - self.start > self.config.max_string_length {
                 return TokenizeResult::Error(LexerError::StringTooLong);
             }
@@ -330,6 +344,8 @@ impl<'a> Lexer<'a> {
             return TokenizeResult::None;
         }
 
+        let mut comment = String::new();
+
         loop {
             let c = self.advance();
 
@@ -338,22 +354,14 @@ impl<'a> Lexer<'a> {
                 self.start_line = self.current_line;
                 self.start_column = self.current_column;
 
-                return TokenizeResult::Some(Token::new(
-                    TokenKind::Comment(
-                        self.unit.code[self.start + 1..self.current_pos].to_string(),
-                    ),
-                    self.span(),
-                ));
+                return TokenizeResult::Some(Token::new(TokenKind::Comment(comment), self.span()));
             }
 
             if c.is_none() {
-                return TokenizeResult::Some(Token::new(
-                    TokenKind::Comment(
-                        self.unit.code[self.start + 1..self.current_pos].to_string(),
-                    ),
-                    self.span(),
-                ));
+                return TokenizeResult::Some(Token::new(TokenKind::Comment(comment), self.span()));
             }
+
+            comment.push(c.unwrap());
         }
     }
 
@@ -364,8 +372,11 @@ impl<'a> Lexer<'a> {
 
         // TODO: limit the length of numbers + manually parse them
 
+        let mut number = String::new();
+
         while let Some(c) = self.current {
             if c.is_ascii_digit() {
+                number.push(c);
                 self.advance();
             } else {
                 break;
@@ -373,41 +384,38 @@ impl<'a> Lexer<'a> {
         }
         if let Some(c) = self.current {
             if c == '.' {
+                number.push(c);
                 self.advance();
                 while let Some(c) = self.current {
                     if c.is_ascii_digit() {
+                        number.push(c);
                         self.advance();
                     } else {
                         break;
                     }
                 }
                 return TokenizeResult::Some(Token::new(
-                    TokenKind::Float(
-                        self.unit.code[self.start..self.current_pos]
-                            .parse()
-                            .unwrap(),
-                    ),
+                    TokenKind::Float(number.parse().unwrap()),
                     self.span(),
                 ));
             }
         }
         TokenizeResult::Some(Token::new(
-            TokenKind::Integer(
-                self.unit.code[self.start..self.current_pos]
-                    .parse()
-                    .unwrap(),
-            ),
+            TokenKind::Integer(number.parse().unwrap()),
             self.span(),
         ))
     }
 
-    fn identifier(&mut self) -> TokenizeResult {
+    fn identifier_or_keyword(&mut self) -> TokenizeResult {
         if self.current.is_none() || !self.current.unwrap().is_alphanumeric() {
             return TokenizeResult::None;
         }
 
+        let mut text = String::new();
+
         while let Some(c) = self.current {
             if c.is_alphanumeric() || c == '_' {
+                text.push(c);
                 self.advance();
             } else {
                 break;
@@ -417,8 +425,8 @@ impl<'a> Lexer<'a> {
                 return TokenizeResult::Error(LexerError::IdentifierTooLong);
             }
         }
-        let text = &self.unit.code[self.start..self.current_pos];
-        let kind = match text {
+
+        let kind = match text.as_str() {
             "pub" => TokenKind::Pub,
             "mod" => TokenKind::Mod,
             "fn" => TokenKind::Fn,

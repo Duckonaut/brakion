@@ -18,10 +18,11 @@ pub type Units = Vec<Unit>;
 pub struct Unit {
     pub name: String,
     pub id: UnitIdentifier, // Kept here for convenience
-    pub code: String,
+    code: String,
+    code_len_bytes: usize,
     source: Box<dyn ReadSeek>,
     is_at_end: bool,
-    read_pos: usize,
+    read_pos_bytes: usize,
     debt: usize,
 }
 
@@ -29,10 +30,13 @@ impl std::fmt::Debug for Unit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Unit")
             .field("name", &self.name)
+            .field("id", &self.id)
             .field("code", &self.code)
-            .field("source", &"RefCell<Box<dyn Read>>")
+            .field("code_len", &self.code_len_bytes)
+            .field("source", &"Box<dyn Read>")
             .field("is_at_end", &self.is_at_end)
-            .field("read_pos", &self.read_pos)
+            .field("read_pos_bytes", &self.read_pos_bytes)
+            .field("debt", &self.debt)
             .finish()
     }
 }
@@ -43,9 +47,10 @@ impl Unit {
             name,
             id,
             code: String::new(),
+            code_len_bytes: 0,
             source,
             is_at_end: false,
-            read_pos: 0,
+            read_pos_bytes: 0,
             debt: 0,
         }
     }
@@ -67,12 +72,20 @@ impl Unit {
             return None;
         }
 
-        if self.read_pos >= self.code.len() && self.advance_buffer() == 0 {
+        if self.read_pos_bytes >= self.code_len_bytes && self.advance_buffer() == 0 {
             return None;
         }
 
-        let c = self.code.chars().nth(self.read_pos).unwrap();
-        self.read_pos += 1;
+        // TODO: Can we store the chars iterator instead of the string?
+        //       This would make the code more efficient.
+        let c = self
+            .code
+            .get(self.read_pos_bytes..)
+            .unwrap()
+            .chars()
+            .next()
+            .unwrap();
+        self.read_pos_bytes += c.len_utf8();
         Some(c)
     }
 
@@ -95,20 +108,22 @@ impl Unit {
         }
 
         let (decoded, debt) = Self::utf8_safe_read(&buffer[..read], &mut *source);
+        self.code.clear();
+        self.read_pos_bytes = 0;
+
         self.code.push_str(decoded);
+        self.code_len_bytes = self.code.len();
         self.debt = debt;
         read
     }
 
-    // Returns up to `N` characters from the source code, and the debt amount. If at the end of the
-    // source code, panics.
+    // Returns up to `N` characters from the source code, and the debt amount. If at the end of
+    // source code, panics. TODO: Maybe not panic?
     fn utf8_safe_read<'a>(buffer: &'a [u8], source: &mut dyn ReadSeek) -> (&'a str, usize) {
         match std::str::from_utf8(buffer) {
             Ok(s) => (s, 0),
             Err(e) => match e.error_len() {
-                // panic if invalid
-                // utf8 in the middle
-                // of the file
+                // panic if invalid utf8 in the middle of the file
                 Some(_) => panic!("Invalid UTF-8 sequence in source code"),
                 None => {
                     let current_pos = source.stream_position().unwrap();
@@ -134,7 +149,10 @@ impl Unit {
     }
 
     pub fn lines(&mut self, span: &Span) -> Vec<String> {
-        assert!(span.unit == self.id);
+        assert!(
+            span.unit == self.id,
+            "Tried to get lines from a different unit"
+        );
 
         let start_line_byte_pos = span.start.line_start;
         let end_line_byte_pos = span.end.line_start;
@@ -246,6 +264,8 @@ fn utf8_misalignment_boundary() {
     let c = unit.read().unwrap();
 
     assert_eq!(c.len_utf8(), 4);
+
+    dbg!(&unit);
 
     assert_eq!(unit.read(), Some('a'));
 }
