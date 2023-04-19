@@ -309,8 +309,9 @@ impl<'a> Lexer<'a> {
 
         let mut text = String::new();
 
+        let mut escape_last = false;
         while let Some(c) = self.advance() {
-            if c == '"' {
+            if c == '"' && !escape_last {
                 return TokenizeResult::Some(Token::new(TokenKind::String(text), self.span()));
             }
 
@@ -319,6 +320,13 @@ impl<'a> Lexer<'a> {
             if self.current_pos - self.start > self.config.max_string_length {
                 return TokenizeResult::Error(LexerError::StringTooLong);
             }
+
+            if c == '\\' {
+                escape_last = true;
+                continue;
+            }
+
+            escape_last = false;
         }
         TokenizeResult::Error(LexerError::UnterminatedStringLiteral)
     }
@@ -328,9 +336,26 @@ impl<'a> Lexer<'a> {
             return TokenizeResult::None;
         }
 
-        let c = self.advance();
+        let mut c = self.advance();
         if c.is_none() {
             return TokenizeResult::Error(LexerError::UnterminatedCharLiteral);
+        }
+
+        if c == Some('\\') {
+            c = self.advance();
+            if c.is_none() {
+                return TokenizeResult::Error(LexerError::UnterminatedCharLiteral);
+            }
+
+            c = match c.unwrap() {
+                'n' => Some('\n'),
+                'r' => Some('\r'),
+                't' => Some('\t'),
+                '0' => Some('\0'),
+                '\'' => Some('\''),
+                '\\' => Some('\\'),
+                c => return TokenizeResult::Error(LexerError::InvalidEscapeSequence(c)),
+            };
         }
 
         if self.match_cur('\'') {
@@ -497,5 +522,189 @@ impl<'a> Lexer<'a> {
 impl<'a> TokenProducer for Lexer<'a> {
     fn next(&mut self) -> Option<Token> {
         self.next_token()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ErrorModule;
+    use std::io::Cursor;
+
+    fn compare_token_slice_kinds(a: &[Token], b: &[TokenKind]) {
+        assert_eq!(a.len(), b.len());
+
+        for (a, b) in a.iter().zip(b.iter()) {
+            assert_eq!(a.kind, *b); // Takes care of value equality as well
+                                    // Ignore span
+        }
+    }
+
+    fn check_output_tokens(source: &str, expected: &[TokenKind]) {
+        let errors = ErrorModule::new_ref();
+        let config = Config::default();
+
+        let mut unit = Unit::new(
+            "<test>".to_string(),
+            0,
+            Box::new(Cursor::new(source.to_string())),
+        );
+
+        let mut lexer = Lexer::new(&mut unit, &config, errors);
+
+        let mut tokens = Vec::new();
+
+        while let Some(token) = lexer.next() {
+            tokens.push(token);
+        }
+
+        compare_token_slice_kinds(&tokens, expected);
+    }
+
+    // Basic "Should work when it should work" tests
+
+    #[test]
+    fn test_lexer_hello_world() {
+        let source = "fn main() {
+        std::io::println(\"Hello, world!\");
+    }";
+
+        let expected = vec![
+            TokenKind::Fn,
+            TokenKind::Identifier("main".to_string()),
+            TokenKind::LeftParen,
+            TokenKind::RightParen,
+            TokenKind::LeftBrace,
+            TokenKind::Identifier("std".to_string()),
+            TokenKind::DoubleColon,
+            TokenKind::Identifier("io".to_string()),
+            TokenKind::DoubleColon,
+            TokenKind::Identifier("println".to_string()),
+            TokenKind::LeftParen,
+            TokenKind::String("Hello, world!".to_string()),
+            TokenKind::RightParen,
+            TokenKind::Semicolon,
+            TokenKind::RightBrace,
+            TokenKind::Eof,
+        ];
+
+        check_output_tokens(source, &expected);
+    }
+
+    #[test]
+    fn test_lexer_simples() {
+        let source = "(){}[],.+;/*|?:-::->!<<==>=>!===";
+
+        let source_with_spaces = "( ) { } [ ] , . + ; / * | ? : - :: -> ! < <= = >= > != ==";
+
+        let expected = vec![
+            TokenKind::LeftParen,
+            TokenKind::RightParen,
+            TokenKind::LeftBrace,
+            TokenKind::RightBrace,
+            TokenKind::LeftBracket,
+            TokenKind::RightBracket,
+            TokenKind::Comma,
+            TokenKind::Dot,
+            TokenKind::Plus,
+            TokenKind::Semicolon,
+            TokenKind::Slash,
+            TokenKind::Star,
+            TokenKind::Pipe,
+            TokenKind::Question,
+            TokenKind::Colon,
+            TokenKind::Minus,
+            TokenKind::DoubleColon,
+            TokenKind::Arrow,
+            TokenKind::Bang,
+            TokenKind::Less,
+            TokenKind::LessEqual,
+            TokenKind::Equal,
+            TokenKind::GreaterEqual,
+            TokenKind::Greater,
+            TokenKind::BangEqual,
+            TokenKind::EqualEqual,
+            TokenKind::Eof,
+        ];
+
+        check_output_tokens(source, &expected);
+        check_output_tokens(source_with_spaces, &expected);
+    }
+
+    #[test]
+    fn test_lexer_numbers() {
+        let source = "123 123.456 0.123";
+
+        let expected = vec![
+            TokenKind::Integer(123),
+            TokenKind::Float(123.456),
+            TokenKind::Float(0.123),
+            TokenKind::Eof,
+        ];
+
+        check_output_tokens(source, &expected);
+    }
+
+    #[test]
+    fn test_lexer_strings() {
+        let source = "\"Hello, world!\" \"Hello,\\n world!\" \"Hello,\\\" world!\"";
+
+        let expected = vec![
+            TokenKind::String("Hello, world!".to_string()),
+            TokenKind::String("Hello,\\n world!".to_string()),
+            TokenKind::String("Hello,\\\" world!".to_string()),
+            TokenKind::Eof,
+        ];
+
+        check_output_tokens(source, &expected);
+    }
+
+    #[test]
+    fn test_lexer_chars() {
+        let source = "'a' '🙂' '\\n' '\\'' '\\\\'";
+
+        let expected = vec![
+            TokenKind::Char('a'),
+            TokenKind::Char('🙂'),
+            TokenKind::Char('\n'),
+            TokenKind::Char('\''),
+            TokenKind::Char('\\'),
+            TokenKind::Eof,
+        ];
+
+        check_output_tokens(source, &expected);
+    }
+
+    #[test]
+    fn test_lexer_keywords() {
+        let source = "pub mod fn type trait impl var and or for in if else match on while break continue return true false void";
+
+        let expected = vec![
+            TokenKind::Pub,
+            TokenKind::Mod,
+            TokenKind::Fn,
+            TokenKind::Type,
+            TokenKind::Trait,
+            TokenKind::Impl,
+            TokenKind::Var,
+            TokenKind::And,
+            TokenKind::Or,
+            TokenKind::For,
+            TokenKind::In,
+            TokenKind::If,
+            TokenKind::Else,
+            TokenKind::Match,
+            TokenKind::On,
+            TokenKind::While,
+            TokenKind::Break,
+            TokenKind::Continue,
+            TokenKind::Return,
+            TokenKind::True,
+            TokenKind::False,
+            TokenKind::Void,
+            TokenKind::Eof,
+        ];
+
+        check_output_tokens(source, &expected);
     }
 }

@@ -18,6 +18,10 @@ impl ErrorModule {
         Self { errors: Vec::new() }
     }
 
+    pub fn new_ref() -> ErrorModuleRef {
+        std::sync::Arc::new(std::sync::Mutex::new(Self::new()))
+    }
+
     pub fn add_error(&mut self, kind: ErrorKind, level: ErrorLevel, span: Option<Span>) {
         self.errors.push(Error { kind, level, span });
     }
