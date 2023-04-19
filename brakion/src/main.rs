@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use brakion_core::Brakion;
 use clap::Parser;
+use colored::Colorize;
 
 #[derive(Debug, Clone, Parser)]
 #[clap(
@@ -22,7 +23,15 @@ fn main() {
 
     let file = std::fs::File::open(filepath.clone()).expect("Could not open file");
     let mut brakion = Brakion::new(config);
-    let unit_id = brakion.add_unit(filepath.to_string_lossy().to_string(), file);
 
-    brakion.check();
+    brakion.add_unit(filepath.to_str().unwrap().to_string(), file);
+
+    let result = brakion.check();
+
+    match result {
+        Ok(_) => println!("{}", "No errors found".green().bold()),
+        Err(errors) => {
+            println!("{} errors found", errors.len().to_string().red().bold());
+        }
+    }
 }
