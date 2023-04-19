@@ -97,6 +97,7 @@ impl<'a> Lexer<'a> {
             self.single_char_token(),
             self.double_char_token(),
             self.string(),
+            self.char(),
             self.comment(),
             self.number(),
             self.identifier(),
@@ -228,6 +229,7 @@ impl<'a> Lexer<'a> {
             Some('/') => TokenizeResult::Some(Token::new(TokenKind::Slash, self.span())),
             Some('*') => TokenizeResult::Some(Token::new(TokenKind::Star, self.span())),
             Some('|') => TokenizeResult::Some(Token::new(TokenKind::Pipe, self.span())),
+            Some('?') => TokenizeResult::Some(Token::new(TokenKind::Question, self.span())),
             _ => TokenizeResult::None,
         };
 
@@ -282,22 +284,14 @@ impl<'a> Lexer<'a> {
                     TokenizeResult::Some(Token::new(TokenKind::Less, self.span()))
                 }
             }
-            Some('@') => {
-                if self.match_next('=') {
-                    TokenizeResult::Some(Token::new(TokenKind::AtEqual, self.span()))
-                } else {
-                    TokenizeResult::Some(Token::new(TokenKind::At, self.span()))
-                }
-            }
             _ => TokenizeResult::None,
         }
     }
 
     fn string(&mut self) -> TokenizeResult {
-        if self.current != Some('"') {
+        if !self.match_cur('"') {
             return TokenizeResult::None;
         }
-        self.advance();
 
         while let Some(c) = self.advance() {
             if c == '"' {
@@ -315,23 +309,44 @@ impl<'a> Lexer<'a> {
         TokenizeResult::Error(LexerError::UnterminatedStringLiteral)
     }
 
-    fn comment(&mut self) -> TokenizeResult {
-        if self.current != Some('#') {
+    fn char(&mut self) -> TokenizeResult {
+        if !self.match_cur('\'') {
             return TokenizeResult::None;
         }
-        self.advance();
+
+        let c = self.advance();
+        if c.is_none() {
+            return TokenizeResult::Error(LexerError::UnterminatedCharLiteral);
+        }
+
+        if self.match_cur('\'') {
+            return TokenizeResult::Some(Token::new(TokenKind::Char(c.unwrap()), self.span()));
+        }
+        TokenizeResult::Error(LexerError::UnterminatedCharLiteral)
+    }
+
+    fn comment(&mut self) -> TokenizeResult {
+        if !self.match_cur('#') {
+            return TokenizeResult::None;
+        }
+
         loop {
             let c = self.advance();
-            if let Some(c) = c {
-                if c == '\n' {
-                    return TokenizeResult::Some(Token::new(
-                        TokenKind::Comment(
-                            self.unit.code[self.start + 1..self.current_pos].to_string(),
-                        ),
-                        self.span(),
-                    ));
-                }
-            } else {
+
+            if self.current == Some('\n') || c == Some('\r') {
+                self.handle_line_ending();
+                self.start_line = self.current_line;
+                self.start_column = self.current_column;
+
+                return TokenizeResult::Some(Token::new(
+                    TokenKind::Comment(
+                        self.unit.code[self.start + 1..self.current_pos].to_string(),
+                    ),
+                    self.span(),
+                ));
+            }
+
+            if c.is_none() {
                 return TokenizeResult::Some(Token::new(
                     TokenKind::Comment(
                         self.unit.code[self.start + 1..self.current_pos].to_string(),
@@ -404,6 +419,7 @@ impl<'a> Lexer<'a> {
         }
         let text = &self.unit.code[self.start..self.current_pos];
         let kind = match text {
+            "pub" => TokenKind::Pub,
             "mod" => TokenKind::Mod,
             "fn" => TokenKind::Fn,
             "type" => TokenKind::Type,
@@ -417,6 +433,8 @@ impl<'a> Lexer<'a> {
             "if" => TokenKind::If,
             "else" => TokenKind::Else,
             "while" => TokenKind::While,
+            "match" => TokenKind::Match,
+            "on" => TokenKind::On,
             "break" => TokenKind::Break,
             "continue" => TokenKind::Continue,
             "return" => TokenKind::Return,
@@ -453,14 +471,18 @@ impl<'a> Lexer<'a> {
         ))
     }
 
-    fn match_next(&mut self, c: char) -> bool {
-        self.advance();
+    fn match_cur(&mut self, c: char) -> bool {
         if self.current == Some(c) {
             self.advance();
             true
         } else {
             false
         }
+    }
+
+    fn match_next(&mut self, c: char) -> bool {
+        self.advance();
+        self.match_cur(c)
     }
 }
 

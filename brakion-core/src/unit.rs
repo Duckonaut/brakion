@@ -1,5 +1,4 @@
 use std::{
-    cell::RefCell,
     fmt::Display,
     hash::Hash,
     io::{Read, Seek},
@@ -20,7 +19,7 @@ pub struct Unit {
     pub name: String,
     pub id: UnitIdentifier, // Kept here for convenience
     pub code: String,
-    source: RefCell<Box<dyn ReadSeek>>,
+    source: Box<dyn ReadSeek>,
     is_at_end: bool,
     read_pos: usize,
     debt: usize,
@@ -44,7 +43,7 @@ impl Unit {
             name,
             id,
             code: String::new(),
-            source: RefCell::new(source),
+            source,
             is_at_end: false,
             read_pos: 0,
             debt: 0,
@@ -78,7 +77,7 @@ impl Unit {
     }
 
     fn advance_buffer(&mut self) -> usize {
-        let mut source = self.source.borrow_mut();
+        let source = &mut self.source;
         let mut buffer = [0; READ_INCREMENT];
 
         if self.debt > 0 {
@@ -134,7 +133,7 @@ impl Unit {
         }
     }
 
-    pub fn lines(&self, span: &Span) -> Vec<String> {
+    pub fn lines(&mut self, span: &Span) -> Vec<String> {
         assert!(span.unit == self.id);
 
         let start_line_byte_pos = span.start.line_start;
@@ -143,8 +142,8 @@ impl Unit {
 
         let mut lines = String::new();
 
-        let mut source = self.source.borrow_mut();
-        let original_pos = source.seek(std::io::SeekFrom::Current(0)).unwrap();
+        let source = &mut self.source;
+        let original_pos = source.stream_position().unwrap();
 
         source
             .seek(std::io::SeekFrom::Start(start_line_byte_pos as u64))
@@ -323,7 +322,7 @@ impl Span {
 
 impl Display for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}-{} in unit {}", self.start, self.end, self.unit)
+        write!(f, "{}-{}", self.start, self.end)
     }
 }
 

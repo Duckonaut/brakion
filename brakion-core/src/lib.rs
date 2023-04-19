@@ -44,7 +44,7 @@ impl Brakion {
         let error_module = self.error_module.lock().unwrap();
 
         if error_module.unrecoverable() {
-            error_module.dump(&self.units);
+            error_module.dump(&mut self.units);
             Err(error_module.errors())
         } else {
             Ok(())
@@ -53,11 +53,12 @@ impl Brakion {
 
     fn process_unit(&mut self, unit_id: UnitIdentifier) {
         let unit = &mut self.units[unit_id];
+        let unit_name = unit.name().to_string();
         let mut lexer = lexer::Lexer::new(unit, &self.config, self.error_module.clone());
         let mut filtered = ParserTokenFilter::new(&mut lexer);
 
         while let Some(token) = filtered.next() {
-            println!("{token}");
+            println!("{token} in {}", &unit_name);
         }
     }
 

@@ -34,7 +34,7 @@ impl ErrorModule {
         self.errors.clone()
     }
 
-    pub fn dump(&self, units: &crate::unit::Units) {
+    pub fn dump(&self, units: &mut crate::unit::Units) {
         let mut sink = std::io::stderr().lock();
 
         for error in &self.errors {
@@ -46,7 +46,7 @@ impl ErrorModule {
         &self,
         mut f: impl std::io::Write,
         error: &Error,
-        units: &crate::unit::Units,
+        units: &mut crate::unit::Units,
     ) -> std::io::Result<()> {
         match &error.kind {
             ErrorKind::LexerError(e) => writeln!(f, "{}: {}", "lexer error".red(), e)?,
@@ -58,7 +58,7 @@ impl ErrorModule {
         }
 
         let span = error.span.unwrap();
-        let unit = units.get(span.unit).unwrap();
+        let unit = units.get_mut(span.unit).unwrap();
         let file = unit.name();
 
         writeln!(
