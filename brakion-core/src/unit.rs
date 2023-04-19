@@ -4,7 +4,7 @@ use std::{
     io::{Read, Seek},
 };
 
-const READ_INCREMENT: usize = 1024;
+const READ_INCREMENT: usize = 0x1000; // 4 KiB, default Linux page size
 
 pub trait ReadSeek: Read + Seek {} // Helper trait to allow for dynamic dispatch
 impl<T: Read + Seek> ReadSeek for T {}
