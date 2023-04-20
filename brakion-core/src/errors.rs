@@ -30,6 +30,16 @@ impl ErrorModule {
         self.add_error(ErrorKind::LexerError(kind), ErrorLevel::Error, span);
     }
 
+    pub fn add_error_if_first(&mut self, kind: ErrorKind, level: ErrorLevel, span: Option<Span>) {
+        if !self.errors.iter().any(|e| e.kind == kind) {
+            self.add_error(kind, level, span);
+        }
+    }
+
+    pub fn add_lexer_error_if_first(&mut self, kind: LexerError, span: Option<Span>) {
+        self.add_error_if_first(ErrorKind::LexerError(kind), ErrorLevel::Error, span);
+    }
+
     pub fn unrecoverable(&self) -> bool {
         self.errors.iter().any(|e| e.level == ErrorLevel::Error)
     }
@@ -126,7 +136,7 @@ impl Default for ErrorModule {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ErrorKind {
     LexerError(LexerError),
 }

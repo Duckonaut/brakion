@@ -1,3 +1,5 @@
+use crate::errors::lexer::LexerError;
+use crate::errors::ErrorKind;
 use crate::filters::ParserTokenFilter;
 use crate::lexer::{Lexer, TokenProducer};
 use crate::tokens::{Token, TokenKind};
@@ -61,6 +63,7 @@ fn check_output_tokens_with_errors(
     let mut tokens = Vec::new();
 
     while let Some(token) = lexer.next() {
+        println!("{:?}", token);
         tokens.push(token);
     }
 
@@ -301,4 +304,63 @@ fn test_lexer_comments_filter() {
     }
 
     compare_token_slice_kinds(&tokens, &expected);
+}
+
+#[test]
+fn test_line_ending_mix() {
+    let source_lf = "a\nb\r\nc";
+    let source_crlf = "a\r\nb\nc";
+
+    let expected = vec![
+        TokenKind::Identifier("a".to_string()),
+        TokenKind::Identifier("b".to_string()),
+        TokenKind::Identifier("c".to_string()),
+        TokenKind::Eof,
+    ];
+
+    let errors = check_output_tokens_with_errors(source_lf, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings)
+    );
+
+    let errors = check_output_tokens_with_errors(source_crlf, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings)
+    );
+}
+
+#[test]
+fn test_line_ending_mix_amount() {
+    let source_lf = "a\nb\r\nc\r\nd";
+    let source_crlf = "a\r\nb\nc\nd";
+
+    let expected = vec![
+        TokenKind::Identifier("a".to_string()),
+        TokenKind::Identifier("b".to_string()),
+        TokenKind::Identifier("c".to_string()),
+        TokenKind::Identifier("d".to_string()),
+        TokenKind::Eof,
+    ];
+
+    let errors = check_output_tokens_with_errors(source_lf, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings)
+    );
+
+    let errors = check_output_tokens_with_errors(source_crlf, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings)
+    );
 }

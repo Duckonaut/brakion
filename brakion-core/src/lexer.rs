@@ -157,26 +157,26 @@ impl<'a> Lexer<'a> {
                 match self.current {
                     Some('\r') => {
                         self.advance();
-                    }
-                    _ => {
-                        self.advance();
-                        self.error_module
-                            .lock()
-                            .unwrap()
-                            .add_lexer_error(LexerError::InconsistentLineEndings, None)
-                    }
-                }
 
-                match self.current {
-                    Some('\n') => {
-                        self.advance();
+                        match self.current {
+                            Some('\n') => {
+                                self.advance();
+                            }
+                            _ => {
+                                self.advance();
+                                self.error_module.lock().unwrap().add_lexer_error_if_first(
+                                    LexerError::InconsistentLineEndings,
+                                    None,
+                                )
+                            }
+                        }
                     }
                     _ => {
                         self.advance();
                         self.error_module
                             .lock()
                             .unwrap()
-                            .add_lexer_error(LexerError::InconsistentLineEndings, None)
+                            .add_lexer_error_if_first(LexerError::InconsistentLineEndings, None)
                     }
                 }
 
@@ -194,7 +194,7 @@ impl<'a> Lexer<'a> {
                         self.error_module
                             .lock()
                             .unwrap()
-                            .add_lexer_error(LexerError::InconsistentLineEndings, None)
+                            .add_lexer_error_if_first(LexerError::InconsistentLineEndings, None)
                     }
                 }
 
@@ -536,7 +536,10 @@ impl<'a> TokenProducer for Lexer<'a> {
     }
 }
 
-impl<I> TokenProducer for I where I: Iterator<Item = Token> {
+impl<I> TokenProducer for I
+where
+    I: Iterator<Item = Token>,
+{
     fn next(&mut self) -> Option<Token> {
         Iterator::next(self)
     }
