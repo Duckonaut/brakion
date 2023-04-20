@@ -16,6 +16,9 @@ mod parser;
 mod tokens;
 mod unit;
 
+#[cfg(test)]
+mod tests;
+
 pub struct Brakion {
     config: Config,
     units: Units,
