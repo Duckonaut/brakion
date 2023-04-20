@@ -76,16 +76,14 @@ impl Unit {
             return None;
         }
 
-        // TODO: Can we store the chars iterator instead of the string?
-        //       This would make the code more efficient.
         let c = self
             .code
             .get(self.read_pos_bytes..)
-            .unwrap()
+            .unwrap() // Safe because we checked that the buffer is not empty
             .chars()
             .next()
-            .unwrap();
-        self.read_pos_bytes += c.len_utf8();
+            .unwrap(); // Safe because we checked that the buffer is utf8 and not empty
+        self.read_pos_bytes += c.len_utf8(); // Move to next character
         Some(c)
     }
 
