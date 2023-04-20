@@ -63,7 +63,6 @@ fn check_output_tokens_with_errors(
     let mut tokens = Vec::new();
 
     while let Some(token) = lexer.next() {
-        println!("{:?}", token);
         tokens.push(token);
     }
 
@@ -144,17 +143,67 @@ fn test_lexer_simples() {
 }
 
 #[test]
-fn test_lexer_numbers() {
-    let source = "123 123.456 0.123";
+fn test_lexer_numbers_short() {
+    let source = "123 123456 123.456 0.123 0.12345 12345.0";
 
     let expected = vec![
         TokenKind::Integer(123),
+        TokenKind::Integer(123456),
         TokenKind::Float(123.456),
         TokenKind::Float(0.123),
+        TokenKind::Float(0.12345),
+        TokenKind::Float(12345.0),
         TokenKind::Eof,
     ];
 
     check_output_tokens(source, &expected);
+}
+
+#[test]
+fn test_lexer_integer_bounds() {
+    let mut source = "".to_string();
+    source += &std::u8::MAX.to_string();
+    source += " ";
+    source += &std::u16::MAX.to_string();
+    source += " ";
+    source += &std::u32::MAX.to_string();
+    source += " ";
+    source += &std::u64::MAX.to_string();
+    source += " ";
+    // Token stores u64, ignore signed min/max
+
+    let expected = vec![
+        TokenKind::Integer(std::u8::MAX as u64),
+        TokenKind::Integer(std::u16::MAX as u64),
+        TokenKind::Integer(std::u32::MAX as u64),
+        TokenKind::Integer(std::u64::MAX),
+        TokenKind::Eof,
+    ];
+
+    check_output_tokens(&source, &expected);
+}
+
+#[test]
+fn test_lexer_float_bounds() {
+    let mut source = "".to_string();
+    // Force to use decimal point, otherwise the Display impl
+    // will round stuff.
+    source += format!("{:.1} ", std::f32::MAX).as_str();
+    source += format!("{:.1} ", std::f32::MIN).as_str();
+    source += format!("{:.1} ", std::f64::MAX).as_str();
+    source += format!("{:.1} ", std::f64::MIN).as_str();
+
+    let expected = vec![
+        TokenKind::Float(std::f32::MAX as f64),
+        TokenKind::Minus,
+        TokenKind::Float(std::f32::MIN.abs() as f64),
+        TokenKind::Float(std::f64::MAX),
+        TokenKind::Minus,
+        TokenKind::Float(std::f64::MIN.abs()),
+        TokenKind::Eof,
+    ];
+
+    check_output_tokens(&source, &expected);
 }
 
 #[test]
@@ -290,6 +339,7 @@ fn test_lexer_comments_filter() {
     let mut units = vec![unit];
 
     let mut lexer = Lexer::new(units.iter_mut().next().unwrap(), &config, errors.clone());
+    // Diff from check_output_tokens
     let mut filter = ParserTokenFilter::new(&mut lexer);
 
     let mut tokens = Vec::new();
@@ -335,6 +385,7 @@ fn test_line_ending_mix() {
     );
 }
 
+// Produce only one error per file, not for every bad line ending
 #[test]
 fn test_line_ending_mix_amount() {
     let source_lf = "a\nb\r\nc\r\nd";
@@ -362,5 +413,25 @@ fn test_line_ending_mix_amount() {
     assert_eq!(
         errors[0].kind,
         ErrorKind::LexerError(LexerError::InconsistentLineEndings)
+    );
+}
+
+#[test]
+fn test_bad_chars() {
+    let source = "a b$c";
+
+    let expected = vec![
+        TokenKind::Identifier("a".to_string()),
+        TokenKind::Identifier("b".to_string()),
+        TokenKind::Identifier("c".to_string()),
+        TokenKind::Eof,
+    ];
+
+    let errors = check_output_tokens_with_errors(source, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::UnexpectedCharacter('$'))
     );
 }

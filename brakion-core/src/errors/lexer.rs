@@ -8,6 +8,7 @@ pub enum LexerError {
     UnterminatedCharLiteral,
     InvalidEscapeSequence(char),
     StringTooLong,
+    NumberTooLong,
     IdentifierTooLong,
     InconsistentLineEndings,
 }
@@ -21,6 +22,7 @@ impl Display for LexerError {
             Self::UnterminatedCharLiteral => write!(f, "Unterminated character literal"),
             Self::InvalidEscapeSequence(c) => write!(f, "Invalid escape sequence '\\{}'", c),
             Self::StringTooLong => write!(f, "String literal too long"),
+            Self::NumberTooLong => write!(f, "Number too long"),
             Self::IdentifierTooLong => write!(f, "Identifier too long"),
             Self::InconsistentLineEndings => write!(f, "Inconsistent line endings"),
         }

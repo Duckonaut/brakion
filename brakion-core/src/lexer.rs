@@ -118,6 +118,7 @@ impl<'a> Lexer<'a> {
                     .unwrap()
                     .add_lexer_error(error, self.span());
 
+                // Try to recover
                 self.next_token()
             }
             TokenizeResult::None => match self.current {
@@ -129,7 +130,8 @@ impl<'a> Lexer<'a> {
                         .unwrap()
                         .add_lexer_error(LexerError::UnexpectedCharacter(c), self.span());
 
-                    None
+                    // Try to recover, should be able to skip the unexpected character?
+                    self.next_token()
                 }
                 None => {
                     if self.emitted_eof {
@@ -397,40 +399,71 @@ impl<'a> Lexer<'a> {
             return TokenizeResult::None;
         }
 
-        // TODO: limit the length of numbers + manually parse them
-
-        let mut number = String::new();
+        // Store u64 first, then convert to f64 if longer than len(u64::MAX)
+        let mut number: TokenKind = TokenKind::Integer(0);
+        let mut number_len = 0;
 
         while let Some(c) = self.current {
+            if number_len > self.config.max_number_length {
+                return TokenizeResult::Error(LexerError::NumberTooLong);
+            }
             if c.is_ascii_digit() {
-                number.push(c);
+                let digit = c.to_digit(10).unwrap();
+
+                match number {
+                    TokenKind::Integer(ref mut ni) => {
+                        match ni.checked_mul(10) {
+                            Some(n) => match n.checked_add(digit as u64) {
+                                Some(n) => *ni = n,
+                                None => number = TokenKind::Float(n as f64 + digit as f64),
+                            },
+                            None => {
+                                number = TokenKind::Float((*ni as f64).mul_add(10.0, digit as f64))
+                            }
+                        };
+                    }
+                    TokenKind::Float(ref mut n) => {
+                        *n = n.mul_add(10.0, digit as f64);
+                    }
+                    _ => unreachable!(),
+                }
                 self.advance();
+                number_len += 1;
             } else {
                 break;
             }
         }
         if let Some(c) = self.current {
             if c == '.' {
-                number.push(c);
                 self.advance();
+                let mut fraction = 0.1;
+
                 while let Some(c) = self.current {
-                    if c.is_ascii_digit() {
-                        number.push(c);
-                        self.advance();
+                    if number_len > self.config.max_number_length {
+                        return TokenizeResult::Error(LexerError::NumberTooLong);
+                    }
+                    if let TokenKind::Integer(n) = number {
+                        number = TokenKind::Float(n as f64);
+                    }
+
+                    if let TokenKind::Float(ref mut n) = number {
+                        if c.is_ascii_digit() {
+                            let digit = c.to_digit(10).unwrap();
+                            *n += digit as f64 * fraction;
+                            self.advance();
+                            fraction *= 0.1;
+                            number_len += 1;
+                        } else {
+                            break;
+                        }
                     } else {
-                        break;
+                        unreachable!();
                     }
                 }
-                return TokenizeResult::Some(Token::new(
-                    TokenKind::Float(number.parse().unwrap()),
-                    self.span(),
-                ));
+                return TokenizeResult::Some(Token::new(number, self.span()));
             }
         }
-        TokenizeResult::Some(Token::new(
-            TokenKind::Integer(number.parse().unwrap()),
-            self.span(),
-        ))
+        TokenizeResult::Some(Token::new(number, self.span()))
     }
 
     fn identifier_or_keyword(&mut self) -> TokenizeResult {

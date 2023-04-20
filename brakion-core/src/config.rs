@@ -10,7 +10,7 @@ impl Default for Config {
         Config {
             max_string_length: 4096,
             max_identifier_length: 1024,
-            max_number_length: 256,
+            max_number_length: 1024,
         }
     }
 }

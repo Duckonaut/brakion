@@ -1,26 +1,20 @@
-use std::{
-    fmt::Display,
-    hash::Hash,
-};
+use std::{fmt::Display, hash::Hash};
 
 use crate::unit::Span;
 
 #[derive(Debug, Clone, PartialEq, Hash)]
-pub struct Token
-{
+pub struct Token {
     pub kind: TokenKind,
     pub span: Option<Span>,
 }
 
-impl Token
-{
+impl Token {
     pub fn new(kind: TokenKind, span: Option<Span>) -> Self {
         Self { kind, span }
     }
 }
 
-impl Display for Token
-{
+impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.span {
             Some(span) => write!(f, "[ {} ] {}", self.kind, span),
@@ -65,7 +59,7 @@ pub enum TokenKind {
     Identifier(String),
     String(String),
     Char(char),
-    Integer(i64),
+    Integer(u64),
     Float(f64),
 
     // Keywords.
@@ -164,7 +158,13 @@ impl PartialEq for TokenKind {
             (TokenKind::Identifier(s1), TokenKind::Identifier(s2)) => s1 == s2,
             (TokenKind::String(s1), TokenKind::String(s2)) => s1 == s2,
             (TokenKind::Integer(n1), TokenKind::Integer(n2)) => n1 == n2,
-            (TokenKind::Float(n1), TokenKind::Float(n2)) => n1 == n2,
+            (TokenKind::Float(n1), TokenKind::Float(n2)) => {
+                n1 == n2
+                    || (n1.is_nan() && n2.is_nan())
+                    || (n1.is_infinite() && n2.is_infinite())
+                    // This works relaiably enough for relative precision
+                    || (n1 - n2).abs() <= f64::EPSILON * f64::max(n1.abs(), n2.abs())
+            }
             (TokenKind::Comment(s1), TokenKind::Comment(s2)) => s1 == s2,
             _ => std::mem::discriminant(self) == std::mem::discriminant(other),
         }
