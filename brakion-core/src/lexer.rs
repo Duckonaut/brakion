@@ -432,14 +432,14 @@ impl<'a> Lexer<'a> {
     }
 
     fn identifier_or_keyword(&mut self) -> TokenizeResult {
-        if self.current.is_none() || !self.current.unwrap().is_alphanumeric() {
+        if self.current.is_none() || !Self::is_valid_identifier_start(self.current.unwrap()) {
             return TokenizeResult::None;
         }
 
         let mut text = String::new();
 
         while let Some(c) = self.current {
-            if c.is_alphanumeric() || c == '_' {
+            if Self::is_valid_in_identifier(c) {
                 text.push(c);
                 self.advance();
             } else {
@@ -517,6 +517,15 @@ impl<'a> Lexer<'a> {
         self.advance();
         self.match_cur(c)
     }
+
+    fn is_valid_in_identifier(c: char) -> bool {
+        Self::is_valid_identifier_start(c) || c.is_numeric()
+    }
+
+    fn is_valid_identifier_start(c: char) -> bool {
+        c.is_alphabetic() || c == '_' // TODO: Support some more unicode characters
+                                      //       like emojis
+    }
 }
 
 impl<'a> TokenProducer for Lexer<'a> {
@@ -544,13 +553,44 @@ mod tests {
         let errors = ErrorModule::new_ref();
         let config = Config::default();
 
+        let unit = Unit::new(
+            "<test>".to_string(),
+            0,
+            Box::new(Cursor::new(source.to_string())),
+        );
+
+        let mut units = vec![unit];
+
+        let mut lexer = Lexer::new(units.iter_mut().next().unwrap(), &config, errors.clone());
+
+        let mut tokens = Vec::new();
+
+        while let Some(token) = lexer.next() {
+            tokens.push(token);
+        }
+
+        if !errors.lock().unwrap().errors.is_empty() {
+            errors.lock().unwrap().dump(&mut units);
+            panic!("Lexer produced errors");
+        }
+
+        compare_token_slice_kinds(&tokens, expected);
+    }
+
+    fn check_output_tokens_with_errors(
+        source: &str,
+        expected: &[TokenKind],
+    ) -> Vec<crate::errors::Error> {
+        let errors = ErrorModule::new_ref();
+        let config = Config::default();
+
         let mut unit = Unit::new(
             "<test>".to_string(),
             0,
             Box::new(Cursor::new(source.to_string())),
         );
 
-        let mut lexer = Lexer::new(&mut unit, &config, errors);
+        let mut lexer = Lexer::new(&mut unit, &config, errors.clone());
 
         let mut tokens = Vec::new();
 
@@ -559,6 +599,9 @@ mod tests {
         }
 
         compare_token_slice_kinds(&tokens, expected);
+
+        let err = errors.lock().unwrap().errors.clone();
+        err
     }
 
     // Basic "Should work when it should work" tests
@@ -702,6 +745,36 @@ mod tests {
             TokenKind::True,
             TokenKind::False,
             TokenKind::Void,
+            TokenKind::Eof,
+        ];
+
+        check_output_tokens(source, &expected);
+    }
+
+    #[test]
+    fn test_lexer_identifiers() {
+        let source = "self a b abc a_b _a _abc ___abc Abc aBC _ABC ą _ą _Ą ł _ _0 _a0 a0";
+
+        let expected = vec![
+            TokenKind::Identifier("self".to_string()),
+            TokenKind::Identifier("a".to_string()),
+            TokenKind::Identifier("b".to_string()),
+            TokenKind::Identifier("abc".to_string()),
+            TokenKind::Identifier("a_b".to_string()),
+            TokenKind::Identifier("_a".to_string()),
+            TokenKind::Identifier("_abc".to_string()),
+            TokenKind::Identifier("___abc".to_string()),
+            TokenKind::Identifier("Abc".to_string()),
+            TokenKind::Identifier("aBC".to_string()),
+            TokenKind::Identifier("_ABC".to_string()),
+            TokenKind::Identifier("ą".to_string()),
+            TokenKind::Identifier("_ą".to_string()),
+            TokenKind::Identifier("_Ą".to_string()),
+            TokenKind::Identifier("ł".to_string()),
+            TokenKind::Identifier("_".to_string()),
+            TokenKind::Identifier("_0".to_string()),
+            TokenKind::Identifier("_a0".to_string()),
+            TokenKind::Identifier("a0".to_string()),
             TokenKind::Eof,
         ];
 
