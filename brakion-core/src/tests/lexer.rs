@@ -1,3 +1,4 @@
+use crate::filters::ParserTokenFilter;
 use crate::lexer::{Lexer, TokenProducer};
 use crate::tokens::{Token, TokenKind};
 use crate::unit::Unit;
@@ -244,4 +245,60 @@ fn test_lexer_identifiers() {
     ];
 
     check_output_tokens(source, &expected);
+}
+
+#[test]
+fn test_lexer_comments() {
+    let source = "# Comment at start\n # Comment ater line break \n  # Comment with a # in it\nidentifier # Comment on non-empty line \n# Comment at end";
+
+    let expected_raw = vec![
+        TokenKind::Comment(" Comment at start".to_string()),
+        TokenKind::Comment(" Comment ater line break ".to_string()),
+        TokenKind::Comment(" Comment with a # in it".to_string()),
+        TokenKind::Identifier("identifier".to_string()),
+        TokenKind::Comment(" Comment on non-empty line ".to_string()),
+        TokenKind::Comment(" Comment at end".to_string()),
+        TokenKind::Eof,
+    ];
+
+    check_output_tokens(source, &expected_raw);
+}
+
+#[test]
+fn test_lexer_comments_filter() {
+    let source = "# Comment at start\n # Comment ater line break \n  # Comment with a # in it\nidentifier # Comment on non-empty line \n# Comment at end";
+
+    let expected = vec![
+        TokenKind::Identifier("identifier".to_string()),
+        TokenKind::Eof,
+    ];
+
+    // Inlined from check_output_tokens with filter
+
+    let errors = ErrorModule::new_ref();
+    let config = Config::default();
+
+    let unit = Unit::new(
+        "<test>".to_string(),
+        0,
+        Box::new(Cursor::new(source.to_string())),
+    );
+
+    let mut units = vec![unit];
+
+    let mut lexer = Lexer::new(units.iter_mut().next().unwrap(), &config, errors.clone());
+    let mut filter = ParserTokenFilter::new(&mut lexer);
+
+    let mut tokens = Vec::new();
+
+    while let Some(token) = filter.next() {
+        tokens.push(token);
+    }
+
+    if !errors.lock().unwrap().errors.is_empty() {
+        errors.lock().unwrap().dump(&mut units);
+        panic!("Lexer produced errors");
+    }
+
+    compare_token_slice_kinds(&tokens, &expected);
 }

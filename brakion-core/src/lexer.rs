@@ -375,6 +375,8 @@ impl<'a> Lexer<'a> {
             let c = self.advance();
 
             if self.current == Some('\n') || self.current == Some('\r') {
+                comment.push(c.unwrap());
+
                 self.handle_line_ending();
                 self.start_line = self.current_line;
                 self.start_column = self.current_column;
@@ -531,5 +533,11 @@ impl<'a> Lexer<'a> {
 impl<'a> TokenProducer for Lexer<'a> {
     fn next(&mut self) -> Option<Token> {
         self.next_token()
+    }
+}
+
+impl<I> TokenProducer for I where I: Iterator<Item = Token> {
+    fn next(&mut self) -> Option<Token> {
+        Iterator::next(self)
     }
 }
