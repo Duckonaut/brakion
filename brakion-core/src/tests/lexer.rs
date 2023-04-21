@@ -300,6 +300,25 @@ fn test_lexer_identifiers() {
 }
 
 #[test]
+fn test_lexer_identifiers_with_keywords() {
+    let source = "pub puba apub apuba _pub pub_ forward before";
+
+    let expected = vec![
+        TokenKind::Pub,
+        TokenKind::Identifier("puba".to_string()),
+        TokenKind::Identifier("apub".to_string()),
+        TokenKind::Identifier("apuba".to_string()),
+        TokenKind::Identifier("_pub".to_string()),
+        TokenKind::Identifier("pub_".to_string()),
+        TokenKind::Identifier("forward".to_string()),
+        TokenKind::Identifier("before".to_string()),
+        TokenKind::Eof,
+    ];
+
+    check_output_tokens(source, &expected);
+}
+
+#[test]
 fn test_lexer_comments() {
     let source = "# Comment at start\n # Comment ater line break \n  # Comment with a # in it\nidentifier # Comment on non-empty line \n# Comment at end";
 
