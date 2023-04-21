@@ -225,83 +225,62 @@ impl<'a> Lexer<'a> {
     }
 
     fn single_char_token(&mut self) -> TokenizeResult {
-        let token = match self.current {
-            Some('(') => TokenizeResult::Some(Token::new(TokenKind::LeftParen, self.span())),
-            Some(')') => TokenizeResult::Some(Token::new(TokenKind::RightParen, self.span())),
-            Some('{') => TokenizeResult::Some(Token::new(TokenKind::LeftBrace, self.span())),
-            Some('}') => TokenizeResult::Some(Token::new(TokenKind::RightBrace, self.span())),
-            Some('[') => TokenizeResult::Some(Token::new(TokenKind::LeftBracket, self.span())),
-            Some(']') => TokenizeResult::Some(Token::new(TokenKind::RightBracket, self.span())),
-            Some(',') => TokenizeResult::Some(Token::new(TokenKind::Comma, self.span())),
-            Some('.') => TokenizeResult::Some(Token::new(TokenKind::Dot, self.span())),
-            Some('+') => TokenizeResult::Some(Token::new(TokenKind::Plus, self.span())),
-            Some(';') => TokenizeResult::Some(Token::new(TokenKind::Semicolon, self.span())),
-            Some('/') => TokenizeResult::Some(Token::new(TokenKind::Slash, self.span())),
-            Some('*') => TokenizeResult::Some(Token::new(TokenKind::Star, self.span())),
-            Some('|') => TokenizeResult::Some(Token::new(TokenKind::Pipe, self.span())),
-            Some('?') => TokenizeResult::Some(Token::new(TokenKind::Question, self.span())),
-            _ => TokenizeResult::None,
+        let token_kind = match self.current {
+            Some('(') => Some(TokenKind::LeftParen),
+            Some(')') => Some(TokenKind::RightParen),
+            Some('{') => Some(TokenKind::LeftBrace),
+            Some('}') => Some(TokenKind::RightBrace),
+            Some('[') => Some(TokenKind::LeftBracket),
+            Some(']') => Some(TokenKind::RightBracket),
+            Some(',') => Some(TokenKind::Comma),
+            Some('.') => Some(TokenKind::Dot),
+            Some('+') => Some(TokenKind::Plus),
+            Some(';') => Some(TokenKind::Semicolon),
+            Some('/') => Some(TokenKind::Slash),
+            Some('*') => Some(TokenKind::Star),
+            Some('|') => Some(TokenKind::Pipe),
+            Some('?') => Some(TokenKind::Question),
+            _ => None,
         };
 
-        if let TokenizeResult::Some(_) = token {
+        if let Some(token_kind) = token_kind {
+            let token = Token::new(token_kind, self.span());
             self.advance();
+
+            return TokenizeResult::Some(token);
         }
 
-        token
+        TokenizeResult::None
+    }
+
+    fn double_char_token_case(
+        &mut self,
+        first: char,
+        second: char,
+        short: TokenKind,
+        long: TokenKind,
+    ) -> TokenizeResult {
+        match self.current {
+            Some(c) if c == first => {
+                if self.match_next(second) {
+                    TokenizeResult::Some(Token::new(long, self.span()))
+                } else {
+                    TokenizeResult::Some(Token::new(short, self.span()))
+                }
+            }
+            _ => TokenizeResult::None,
+        }
     }
 
     fn double_char_token(&mut self) -> TokenizeResult {
-        match self.current {
-            Some(':') => TokenizeResult::Some(Token::new(
-                if self.match_next(':') {
-                    TokenKind::DoubleColon
-                } else {
-                    TokenKind::Colon
-                },
-                self.span(),
-            )),
-            Some('-') => TokenizeResult::Some(Token::new(
-                if self.match_next('>') {
-                    TokenKind::Arrow
-                } else {
-                    TokenKind::Minus
-                },
-                self.span(),
-            )),
-            Some('!') => TokenizeResult::Some(Token::new(
-                if self.match_next('=') {
-                    TokenKind::BangEqual
-                } else {
-                    TokenKind::Bang
-                },
-                self.span(),
-            )),
-            Some('=') => TokenizeResult::Some(Token::new(
-                if self.match_next('=') {
-                    TokenKind::EqualEqual
-                } else {
-                    TokenKind::Equal
-                },
-                self.span(),
-            )),
-            Some('>') => TokenizeResult::Some(Token::new(
-                if self.match_next('=') {
-                    TokenKind::GreaterEqual
-                } else {
-                    TokenKind::Greater
-                },
-                self.span(),
-            )),
-            Some('<') => TokenizeResult::Some(Token::new(
-                if self.match_next('=') {
-                    TokenKind::LessEqual
-                } else {
-                    TokenKind::Less
-                },
-                self.span(),
-            )),
-            _ => TokenizeResult::None,
-        }
+        try_all_paths!(
+            self.double_char_token_case(':', ':', TokenKind::Colon, TokenKind::DoubleColon),
+            self.double_char_token_case('-', '>', TokenKind::Minus, TokenKind::Arrow),
+            self.double_char_token_case('!', '=', TokenKind::Bang, TokenKind::BangEqual),
+            self.double_char_token_case('=', '=', TokenKind::Equal, TokenKind::EqualEqual),
+            self.double_char_token_case('<', '=', TokenKind::Less, TokenKind::LessEqual),
+            self.double_char_token_case('>', '=', TokenKind::Greater, TokenKind::GreaterEqual),
+        )
     }
 
     fn string(&mut self) -> TokenizeResult {
@@ -559,7 +538,7 @@ impl<'a> Lexer<'a> {
 
     fn is_valid_identifier_start(c: char) -> bool {
         c.is_alphabetic() || c == '_' // TODO: Support some more unicode characters
-                                      //       like emojis
+                                      //       like emojis (or even emoji modifier sequences?)
     }
 }
 
