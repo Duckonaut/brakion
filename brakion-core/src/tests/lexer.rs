@@ -287,6 +287,20 @@ fn test_lexer_chars() {
 }
 
 #[test]
+fn test_lexer_empty_char() {
+    let source = "''";
+
+    let expected = vec![
+        TokenKind::Eof,
+    ];
+
+    let errors = check_output_token_kinds_with_errors(source, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].kind, ErrorKind::LexerError(LexerError::EmptyCharLiteral));
+}
+
+#[test]
 fn test_lexer_keywords() {
     let source = "pub mod fn type trait impl var and or for in if else match on while break continue return true false void";
 

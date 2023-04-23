@@ -307,6 +307,7 @@ impl<'a> Lexer<'a> {
         }
 
         if self.current == Some('\'') {
+            self.advance();
             return TokenizeResult::Error(LexerError::EmptyCharLiteral);
         }
 
