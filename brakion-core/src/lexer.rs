@@ -108,13 +108,18 @@ impl<'a> Lexer<'a> {
         match token {
             TokenizeResult::Some(token) => Some(token),
             TokenizeResult::Error(error) => {
+                let fatal = error.is_fatal();
                 self.error_module
                     .lock()
                     .unwrap()
                     .add_lexer_error(error, self.span());
 
-                // Try to recover
-                self.next_token()
+                if fatal {
+                    None
+                } else {
+                    // Try to recover
+                    self.next_token()
+                }
             }
             TokenizeResult::None => match self.current {
                 Some(c) => {
@@ -278,10 +283,16 @@ impl<'a> Lexer<'a> {
 
                 match self.current.unwrap() {
                     'n' | 'r' | 't' | '\\' | '"' | '\'' | '0' => text.push(self.current.unwrap()),
-                    _ => {
-                        return TokenizeResult::Error(LexerError::InvalidEscapeSequence(
-                            self.current.unwrap(),
-                        ))
+                    c => {
+                        text.push(c);
+                        let mut error_span = self.span().unwrap();
+                        error_span.start.line = error_span.end.line;
+                        error_span.start.column = error_span.end.column - 1;
+
+                        self.error_module.lock().unwrap().add_lexer_error(
+                            LexerError::InvalidEscapeSequence(c),
+                            Some(error_span),
+                        );
                     }
                 }
             } else {
@@ -329,7 +340,11 @@ impl<'a> Lexer<'a> {
                 '0' => '\0',
                 '\'' => '\'',
                 '\\' => '\\',
-                c => return TokenizeResult::Error(LexerError::InvalidEscapeSequence(c)),
+                c => {
+                    self.advance(); // Try to consume the char
+                    self.advance(); // Try to consume the '
+                    return TokenizeResult::Error(LexerError::InvalidEscapeSequence(c));
+                }
             };
         }
 
@@ -338,7 +353,19 @@ impl<'a> Lexer<'a> {
         if self.match_char('\'') {
             return TokenizeResult::Some(Token::new(TokenKind::Char(content), self.span()));
         }
-        TokenizeResult::Error(LexerError::UnterminatedCharLiteral)
+
+        while !self.match_char('\'') && self.current_pos - self.start <= self.config.max_string_length {
+            self.advance();
+            if self.current.is_none() {
+                return TokenizeResult::Error(LexerError::UnterminatedCharLiteral);
+            }
+        }
+
+        if self.current_pos - self.start > self.config.max_string_length {
+            return TokenizeResult::Error(LexerError::CharLiteralTooLong);
+        }
+
+        TokenizeResult::Error(LexerError::CharLiteralNotOneChar)
     }
 
     fn comment(&mut self) -> TokenizeResult {

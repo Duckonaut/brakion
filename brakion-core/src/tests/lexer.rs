@@ -108,7 +108,14 @@ fn check_output_token_kinds_with_errors(
     err
 }
 
-// Basic "Should work when it should work" tests
+#[test]
+fn test_lexer_empty() {
+    let source = "";
+
+    let expected = vec![TokenKind::Eof];
+
+    check_output_token_kinds(source, &expected);
+}
 
 #[test]
 fn test_lexer_hello_world() {
@@ -243,6 +250,38 @@ fn test_lexer_float_bounds() {
 }
 
 #[test]
+fn test_lexer_integer_too_long() {
+    let mut source = String::new();
+
+    for _ in 0..2048 {
+        source += "9";
+    }
+
+    let expected = vec![];
+
+    let errors = check_output_token_kinds_with_errors(&source, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].kind, ErrorKind::LexerError(LexerError::NumberTooLong));
+}
+
+#[test]
+fn test_lexer_float_too_long() {
+    let mut source = "0.".to_string();
+
+    for _ in 0..2048 {
+        source += "9";
+    }
+
+    let expected = vec![];
+
+    let errors = check_output_token_kinds_with_errors(&source, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].kind, ErrorKind::LexerError(LexerError::NumberTooLong));
+}
+
+#[test]
 fn test_lexer_strings() {
     let source = "\"Hello, world!\" \"Hello,\\n world!\" \"Hello,\\\" world!\"";
 
@@ -271,8 +310,100 @@ fn test_lexer_multiline_string() {
 }
 
 #[test]
+fn test_lexer_string_invalid_escapes() {
+    let source = "\"\\a\" \"\\b\" \"\\c\" \"\\n\" \"\\g\"";
+
+    let expected = vec![
+        TokenKind::String("\\a".to_string()),
+        TokenKind::String("\\b".to_string()),
+        TokenKind::String("\\c".to_string()),
+        TokenKind::String("\\n".to_string()),
+        TokenKind::String("\\g".to_string()),
+        TokenKind::Eof,
+    ];
+
+    let errors = check_output_token_kinds_with_errors(source, &expected);
+
+    assert_eq!(errors.len(), 4);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::InvalidEscapeSequence('a'))
+    );
+    assert_eq!(
+        errors[1].kind,
+        ErrorKind::LexerError(LexerError::InvalidEscapeSequence('b'))
+    );
+    assert_eq!(
+        errors[2].kind,
+        ErrorKind::LexerError(LexerError::InvalidEscapeSequence('c'))
+    );
+    assert_eq!(
+        errors[3].kind,
+        ErrorKind::LexerError(LexerError::InvalidEscapeSequence('g'))
+    );
+}
+
+#[test]
+fn test_lexer_string_abrupt_termination() {
+    let source = "\"Hello, world!";
+
+    let expected = vec![];
+
+    let errors = check_output_token_kinds_with_errors(source, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::UnterminatedStringLiteral)
+    );
+}
+
+#[test]
+fn test_lexer_string_abrupt_escape_termination() {
+    let source = "\"abc\\";
+
+    let expected = vec![];
+
+    let errors = check_output_token_kinds_with_errors(source, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::UnterminatedStringLiteral)
+    );
+}
+
+#[test]
+fn test_lexer_string_empty() {
+    let source = "\"\"";
+
+    let expected = vec![TokenKind::String("".to_string()), TokenKind::Eof];
+
+    check_output_token_kinds(source, &expected);
+}
+
+#[test]
+fn test_lexer_string_too_long() {
+    let mut source = "\"".to_string();
+    for _ in 0..(std::u16::MAX as usize) {
+        source += "a";
+    }
+    source += "\"";
+
+    let expected = vec![];
+
+    let errors = check_output_token_kinds_with_errors(&source, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::StringTooLong)
+    );
+}
+
+#[test]
 fn test_lexer_chars() {
-    let source = "'a' '🙂' '\\n' '\\'' '\\\\'";
+    let source = "'a' '🙂' '\\n' '\\'' '\\\\' '\\t' '\\r' '\\0'";
 
     let expected = vec![
         TokenKind::Char('a'),
@@ -280,6 +411,9 @@ fn test_lexer_chars() {
         TokenKind::Char('\n'),
         TokenKind::Char('\''),
         TokenKind::Char('\\'),
+        TokenKind::Char('\t'),
+        TokenKind::Char('\r'),
+        TokenKind::Char('\0'),
         TokenKind::Eof,
     ];
 
@@ -290,14 +424,123 @@ fn test_lexer_chars() {
 fn test_lexer_empty_char() {
     let source = "''";
 
-    let expected = vec![
-        TokenKind::Eof,
-    ];
+    let expected = vec![TokenKind::Eof];
 
     let errors = check_output_token_kinds_with_errors(source, &expected);
 
     assert_eq!(errors.len(), 1);
-    assert_eq!(errors[0].kind, ErrorKind::LexerError(LexerError::EmptyCharLiteral));
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::EmptyCharLiteral)
+    );
+}
+
+#[test]
+fn test_lexer_char_invalid_escapes() {
+    let source = "'\\a' '\\b' '\\c' '\\n' '\\g'";
+
+    let expected = vec![TokenKind::Char('\n'), TokenKind::Eof];
+
+    let errors = check_output_token_kinds_with_errors(source, &expected);
+
+    assert_eq!(errors.len(), 4);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::InvalidEscapeSequence('a'))
+    );
+    assert_eq!(
+        errors[1].kind,
+        ErrorKind::LexerError(LexerError::InvalidEscapeSequence('b'))
+    );
+    assert_eq!(
+        errors[2].kind,
+        ErrorKind::LexerError(LexerError::InvalidEscapeSequence('c'))
+    );
+    assert_eq!(
+        errors[3].kind,
+        ErrorKind::LexerError(LexerError::InvalidEscapeSequence('g'))
+    );
+}
+
+#[test]
+fn test_lexer_char_abrupt_termination() {
+    let source = "'a";
+
+    let expected = vec![];
+
+    let errors = check_output_token_kinds_with_errors(source, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::UnterminatedCharLiteral)
+    );
+}
+
+#[test]
+fn test_lexer_char_no_char() {
+    let source = "'";
+
+    let expected = vec![];
+
+    let errors = check_output_token_kinds_with_errors(source, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::UnterminatedCharLiteral)
+    );
+}
+
+#[test]
+fn test_lexer_char_abrupt_escape_termination() {
+    let source = "'\\";
+
+    let expected = vec![];
+
+    let errors = check_output_token_kinds_with_errors(source, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::UnterminatedCharLiteral)
+    );
+}
+
+#[test]
+fn test_lexer_char_not_one_char() {
+    let source = "'ab'";
+
+    let expected = vec![TokenKind::Eof];
+
+    let errors = check_output_token_kinds_with_errors(source, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::CharLiteralNotOneChar)
+    );
+}
+
+#[test]
+fn test_lexer_char_too_long() {
+    let mut source = "'".to_string();
+
+    for _ in 0..(std::u16::MAX as usize) {
+        source += "a";
+    }
+
+    source += "'";
+
+    let expected = vec![];
+
+    let errors = check_output_token_kinds_with_errors(&source, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::CharLiteralTooLong)
+    );
 }
 
 #[test]
@@ -380,6 +623,25 @@ fn test_lexer_identifiers_with_keywords() {
     ];
 
     check_output_token_kinds(source, &expected);
+}
+
+#[test]
+fn test_lexer_identifier_too_long() {
+    let mut source = "a".to_string();
+
+    for _ in 0..(std::u16::MAX as usize) {
+        source += "a";
+    }
+
+    let expected = vec![];
+
+    let errors = check_output_token_kinds_with_errors(&source, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::IdentifierTooLong)
+    );
 }
 
 #[test]
