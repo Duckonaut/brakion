@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::lexer::LineEndingStyle;
+use crate::line_endings::LineEndingStyle;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LexerError {
@@ -8,6 +8,7 @@ pub enum LexerError {
     UnexpectedEndOfFile,
     UnterminatedStringLiteral,
     UnterminatedCharLiteral,
+    EmptyCharLiteral,
     InvalidEscapeSequence(char),
     StringTooLong,
     NumberTooLong,
@@ -22,6 +23,7 @@ impl Display for LexerError {
             Self::UnexpectedEndOfFile => write!(f, "Unexpected end of file"),
             Self::UnterminatedStringLiteral => write!(f, "Unterminated string literal"),
             Self::UnterminatedCharLiteral => write!(f, "Unterminated character literal"),
+            Self::EmptyCharLiteral => write!(f, "Empty character literal"),
             Self::InvalidEscapeSequence(c) => write!(f, "Invalid escape sequence '\\{}'", c),
             Self::StringTooLong => write!(f, "String literal too long"),
             Self::NumberTooLong => write!(f, "Number too long"),

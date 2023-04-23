@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::errors::lexer::LexerError;
 use crate::errors::ErrorModuleRef;
+use crate::line_endings::LineEndingStyle;
 use crate::tokens::Token;
 use crate::tokens::TokenKind;
 use crate::unit::Location;
@@ -53,27 +54,6 @@ pub struct Lexer<'a> {
     line_ending_style: LineEndingStyle,
     // EOF
     emitted_eof: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LineEndingStyle {
-    Unknown,
-    Lf,
-    Cr,
-    Lfcr,
-    Crlf,
-}
-
-impl std::fmt::Display for LineEndingStyle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LineEndingStyle::Unknown => write!(f, "Unknown"),
-            LineEndingStyle::Lf => write!(f, "LF"),
-            LineEndingStyle::Cr => write!(f, "CR"),
-            LineEndingStyle::Lfcr => write!(f, "LFCR"),
-            LineEndingStyle::Crlf => write!(f, "CRLF"),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -173,32 +153,15 @@ impl<'a> Lexer<'a> {
         );
     }
 
-    fn handle_line_ending(&mut self) {
-        let encountered = match self.current {
-            Some('\r') => {
-                self.advance();
-
-                match self.current {
-                    Some('\n') => {
-                        self.advance();
-                        LineEndingStyle::Crlf
-                    }
-                    _ => LineEndingStyle::Cr,
-                }
-            }
-            Some('\n') => {
-                self.advance();
-
-                match self.current {
-                    Some('\r') => {
-                        self.advance();
-                        LineEndingStyle::Lfcr
-                    }
-                    _ => LineEndingStyle::Lf,
-                }
-            }
-            _ => unreachable!(),
-        };
+    fn handle_line_ending(&mut self) -> LineEndingStyle {
+        let encountered = LineEndingStyle::get_line_ending(
+            &mut *self,
+            |s| s.current,
+            |s| {
+                s.advance();
+            },
+        )
+        .unwrap(); // Handle line ending is only called when a line ending starts.
 
         self.increment_line();
 
@@ -207,6 +170,8 @@ impl<'a> Lexer<'a> {
         } else if self.line_ending_style != encountered {
             self.signal_inconsistent_line_ending(encountered);
         }
+
+        encountered
     }
 
     fn skip_whitespace(&mut self) {
@@ -260,15 +225,14 @@ impl<'a> Lexer<'a> {
         short: TokenKind,
         long: TokenKind,
     ) -> TokenizeResult {
-        match self.current {
-            Some(c) if c == first => {
-                if self.match_next(second) {
-                    TokenizeResult::Some(Token::new(long, self.span()))
-                } else {
-                    TokenizeResult::Some(Token::new(short, self.span()))
-                }
+        if self.match_char(first) {
+            if self.match_char(second) {
+                TokenizeResult::Some(Token::new(long, self.span()))
+            } else {
+                TokenizeResult::Some(Token::new(short, self.span()))
             }
-            _ => TokenizeResult::None,
+        } else {
+            TokenizeResult::None
         }
     }
 
@@ -284,76 +248,108 @@ impl<'a> Lexer<'a> {
     }
 
     fn string(&mut self) -> TokenizeResult {
-        if !self.match_cur('"') {
+        if !self.match_char('"') {
             return TokenizeResult::None;
         }
 
         let mut text = String::new();
 
-        let mut escape_last = false;
-        while let Some(c) = self.advance() {
-            if c == '"' && !escape_last {
-                return TokenizeResult::Some(Token::new(TokenKind::String(text), self.span()));
+        while let Some(c) = self.current {
+            if c == '\n' || c == '\r' {
+                let line_ending = self.handle_line_ending();
+
+                text.push_str(line_ending.as_str());
+                continue;
             }
 
-            text.push(c);
+            if c == '"' {
+                let span = self.span();
+                self.advance();
+                return TokenizeResult::Some(Token::new(TokenKind::String(text), span));
+            }
+
+            // Handle escape sequences, but don't escape them yet.
+            if c == '\\' {
+                text.push(c);
+                self.advance();
+                if self.current.is_none() {
+                    return TokenizeResult::Error(LexerError::UnterminatedStringLiteral);
+                }
+
+                match self.current.unwrap() {
+                    'n' | 'r' | 't' | '\\' | '"' | '\'' | '0' => text.push(self.current.unwrap()),
+                    _ => {
+                        return TokenizeResult::Error(LexerError::InvalidEscapeSequence(
+                            self.current.unwrap(),
+                        ))
+                    }
+                }
+            } else {
+                text.push(c);
+            }
 
             if self.current_pos - self.start > self.config.max_string_length {
                 return TokenizeResult::Error(LexerError::StringTooLong);
             }
 
-            if c == '\\' {
-                escape_last = true;
-                continue;
-            }
-
-            escape_last = false;
+            self.advance();
         }
         TokenizeResult::Error(LexerError::UnterminatedStringLiteral)
     }
 
     fn char(&mut self) -> TokenizeResult {
-        if !self.match_cur('\'') {
+        if !self.match_char('\'') {
             return TokenizeResult::None;
         }
 
-        let mut c = self.advance();
-        if c.is_none() {
+        if self.current.is_none() {
             return TokenizeResult::Error(LexerError::UnterminatedCharLiteral);
         }
 
-        if c == Some('\\') {
-            c = self.advance();
-            if c.is_none() {
+        if self.current == Some('\'') {
+            return TokenizeResult::Error(LexerError::EmptyCharLiteral);
+        }
+
+        let mut content = self.current.unwrap();
+
+        if self.current == Some('\\') {
+            self.advance();
+            if self.current.is_none() {
                 return TokenizeResult::Error(LexerError::UnterminatedCharLiteral);
             }
 
-            c = match c.unwrap() {
-                'n' => Some('\n'),
-                'r' => Some('\r'),
-                't' => Some('\t'),
-                '0' => Some('\0'),
-                '\'' => Some('\''),
-                '\\' => Some('\\'),
+            // Handle escape sequences in the lexer for chars
+            // As opposed to strings, where we can just handle them in the parser,
+            // we need to handle them here to stora as a rust char literal.
+            content = match self.current.unwrap() {
+                'n' => '\n',
+                'r' => '\r',
+                't' => '\t',
+                '0' => '\0',
+                '\'' => '\'',
+                '\\' => '\\',
                 c => return TokenizeResult::Error(LexerError::InvalidEscapeSequence(c)),
             };
         }
 
-        if self.match_cur('\'') {
-            return TokenizeResult::Some(Token::new(TokenKind::Char(c.unwrap()), self.span()));
+        self.advance();
+
+        if self.match_char('\'') {
+            return TokenizeResult::Some(Token::new(TokenKind::Char(content), self.span()));
         }
         TokenizeResult::Error(LexerError::UnterminatedCharLiteral)
     }
 
     fn comment(&mut self) -> TokenizeResult {
-        if !self.match_cur('#') {
+        if !self.match_char('#') {
             return TokenizeResult::None;
         }
 
         let mut comment = String::new();
 
         loop {
-            let c = self.advance();
+            let c = self.current;
+            self.advance();
 
             if self.current == Some('\n') || self.current == Some('\r') {
                 comment.push(c.unwrap());
@@ -494,12 +490,11 @@ impl<'a> Lexer<'a> {
     }
 
     fn advance(&mut self) -> Option<char> {
-        let c = self.current;
         self.current = self.unit.read();
         self.current_pos += 1;
-        self.current_pos_in_bytes += c.map_or(0, |c| c.len_utf8());
+        self.current_pos_in_bytes += self.current.map_or(0, |c| c.len_utf8());
         self.current_column += 1;
-        c
+        self.current
     }
 
     fn span(&self) -> Option<Span> {
@@ -518,18 +513,13 @@ impl<'a> Lexer<'a> {
         ))
     }
 
-    fn match_cur(&mut self, c: char) -> bool {
+    fn match_char(&mut self, c: char) -> bool {
         if self.current == Some(c) {
             self.advance();
             true
         } else {
             false
         }
-    }
-
-    fn match_next(&mut self, c: char) -> bool {
-        self.advance();
-        self.match_cur(c)
     }
 
     fn is_valid_in_identifier(c: char) -> bool {

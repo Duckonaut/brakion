@@ -1,7 +1,8 @@
 use crate::errors::lexer::LexerError;
 use crate::errors::ErrorKind;
 use crate::filters::ParserTokenFilter;
-use crate::lexer::{Lexer, TokenProducer, LineEndingStyle};
+use crate::lexer::{Lexer, TokenProducer};
+use crate::line_endings::LineEndingStyle;
 use crate::tokens::{Token, TokenKind};
 use crate::unit::Unit;
 use crate::Config;
@@ -17,7 +18,7 @@ fn compare_token_slice_kinds(a: &[Token], b: &[TokenKind]) {
     }
 }
 
-fn check_output_tokens(source: &str, expected: &[TokenKind]) {
+fn check_output_token_kinds(source: &str, expected: &[TokenKind]) {
     let errors = ErrorModule::new_ref();
     let config = Config::default();
 
@@ -45,7 +46,42 @@ fn check_output_tokens(source: &str, expected: &[TokenKind]) {
     compare_token_slice_kinds(&tokens, expected);
 }
 
-fn check_output_tokens_with_errors(
+fn check_output_token_span_positions(source: &str, expected: &[(usize, usize, usize, usize)]) {
+    let errors = ErrorModule::new_ref();
+    let config = Config::default();
+
+    let unit = Unit::new(
+        "<test>".to_string(),
+        0,
+        Box::new(Cursor::new(source.to_string())),
+    );
+
+    let mut units = vec![unit];
+
+    let mut lexer = Lexer::new(units.iter_mut().next().unwrap(), &config, errors.clone());
+
+    let mut tokens = Vec::new();
+
+    while let Some(token) = lexer.next() {
+        tokens.push(token);
+    }
+
+    if !errors.lock().unwrap().errors.is_empty() {
+        errors.lock().unwrap().dump(&mut units);
+        panic!("Lexer produced errors");
+    }
+
+    assert_eq!(tokens.len(), expected.len() + 1); // Account for EOF
+
+    for (token, expected) in tokens.iter().zip(expected.iter()) {
+        assert_eq!(token.span.unwrap().start.line, expected.0);
+        assert_eq!(token.span.unwrap().start.column, expected.1);
+        assert_eq!(token.span.unwrap().end.line, expected.2);
+        assert_eq!(token.span.unwrap().end.column, expected.3);
+    }
+}
+
+fn check_output_token_kinds_with_errors(
     source: &str,
     expected: &[TokenKind],
 ) -> Vec<crate::errors::Error> {
@@ -99,7 +135,7 @@ fn test_lexer_hello_world() {
         TokenKind::Eof,
     ];
 
-    check_output_tokens(source, &expected);
+    check_output_token_kinds(source, &expected);
 }
 
 #[test]
@@ -138,8 +174,8 @@ fn test_lexer_simples() {
         TokenKind::Eof,
     ];
 
-    check_output_tokens(source, &expected);
-    check_output_tokens(source_with_spaces, &expected);
+    check_output_token_kinds(source, &expected);
+    check_output_token_kinds(source_with_spaces, &expected);
 }
 
 #[test]
@@ -156,7 +192,7 @@ fn test_lexer_numbers_short() {
         TokenKind::Eof,
     ];
 
-    check_output_tokens(source, &expected);
+    check_output_token_kinds(source, &expected);
 }
 
 #[test]
@@ -180,7 +216,7 @@ fn test_lexer_integer_bounds() {
         TokenKind::Eof,
     ];
 
-    check_output_tokens(&source, &expected);
+    check_output_token_kinds(&source, &expected);
 }
 
 #[test]
@@ -203,7 +239,7 @@ fn test_lexer_float_bounds() {
         TokenKind::Eof,
     ];
 
-    check_output_tokens(&source, &expected);
+    check_output_token_kinds(&source, &expected);
 }
 
 #[test]
@@ -217,7 +253,21 @@ fn test_lexer_strings() {
         TokenKind::Eof,
     ];
 
-    check_output_tokens(source, &expected);
+    check_output_token_kinds(source, &expected);
+}
+
+#[test]
+fn test_lexer_multiline_string() {
+    let source = "\"Hello, \nworld!\"";
+
+    let expected = vec![
+        TokenKind::String("Hello, \nworld!".to_string()),
+        TokenKind::Eof,
+    ];
+
+    check_output_token_kinds(source, &expected);
+
+    check_output_token_span_positions(source, &[(1, 1, 2, 7)]);
 }
 
 #[test]
@@ -233,7 +283,7 @@ fn test_lexer_chars() {
         TokenKind::Eof,
     ];
 
-    check_output_tokens(source, &expected);
+    check_output_token_kinds(source, &expected);
 }
 
 #[test]
@@ -266,7 +316,7 @@ fn test_lexer_keywords() {
         TokenKind::Eof,
     ];
 
-    check_output_tokens(source, &expected);
+    check_output_token_kinds(source, &expected);
 }
 
 #[test]
@@ -296,7 +346,7 @@ fn test_lexer_identifiers() {
         TokenKind::Eof,
     ];
 
-    check_output_tokens(source, &expected);
+    check_output_token_kinds(source, &expected);
 }
 
 #[test]
@@ -315,7 +365,7 @@ fn test_lexer_identifiers_with_keywords() {
         TokenKind::Eof,
     ];
 
-    check_output_tokens(source, &expected);
+    check_output_token_kinds(source, &expected);
 }
 
 #[test]
@@ -332,7 +382,7 @@ fn test_lexer_comments() {
         TokenKind::Eof,
     ];
 
-    check_output_tokens(source, &expected_raw);
+    check_output_token_kinds(source, &expected_raw);
 }
 
 #[test]
@@ -391,68 +441,104 @@ fn test_line_ending_mix() {
         TokenKind::Eof,
     ];
 
-    let errors = check_output_tokens_with_errors(source_lf, &expected);
+    let errors = check_output_token_kinds_with_errors(source_lf, &expected);
 
     assert_eq!(errors.len(), 3);
     assert_eq!(
         errors[0].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Lf, LineEndingStyle::Crlf))
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(
+            LineEndingStyle::Lf,
+            LineEndingStyle::Crlf
+        ))
     );
     assert_eq!(
         errors[1].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Lf, LineEndingStyle::Cr))
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(
+            LineEndingStyle::Lf,
+            LineEndingStyle::Cr
+        ))
     );
     assert_eq!(
         errors[2].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Lf, LineEndingStyle::Lfcr))
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(
+            LineEndingStyle::Lf,
+            LineEndingStyle::Lfcr
+        ))
     );
 
-    let errors = check_output_tokens_with_errors(source_cr, &expected);
+    let errors = check_output_token_kinds_with_errors(source_cr, &expected);
 
     assert_eq!(errors.len(), 3);
     assert_eq!(
         errors[0].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Cr, LineEndingStyle::Lf))
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(
+            LineEndingStyle::Cr,
+            LineEndingStyle::Lf
+        ))
     );
     assert_eq!(
         errors[1].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Cr, LineEndingStyle::Crlf))
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(
+            LineEndingStyle::Cr,
+            LineEndingStyle::Crlf
+        ))
     );
     assert_eq!(
         errors[2].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Cr, LineEndingStyle::Lfcr))
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(
+            LineEndingStyle::Cr,
+            LineEndingStyle::Lfcr
+        ))
     );
 
-    let errors = check_output_tokens_with_errors(source_crlf, &expected);
+    let errors = check_output_token_kinds_with_errors(source_crlf, &expected);
 
     assert_eq!(errors.len(), 3);
     assert_eq!(
         errors[0].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Crlf, LineEndingStyle::Lf))
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(
+            LineEndingStyle::Crlf,
+            LineEndingStyle::Lf
+        ))
     );
     assert_eq!(
         errors[1].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Crlf, LineEndingStyle::Cr))
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(
+            LineEndingStyle::Crlf,
+            LineEndingStyle::Cr
+        ))
     );
     assert_eq!(
         errors[2].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Crlf, LineEndingStyle::Lfcr))
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(
+            LineEndingStyle::Crlf,
+            LineEndingStyle::Lfcr
+        ))
     );
 
-    let errors = check_output_tokens_with_errors(source_lfcr, &expected);
+    let errors = check_output_token_kinds_with_errors(source_lfcr, &expected);
 
     assert_eq!(errors.len(), 3);
     assert_eq!(
         errors[0].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Lfcr, LineEndingStyle::Lf))
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(
+            LineEndingStyle::Lfcr,
+            LineEndingStyle::Lf
+        ))
     );
     assert_eq!(
         errors[1].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Lfcr, LineEndingStyle::Cr))
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(
+            LineEndingStyle::Lfcr,
+            LineEndingStyle::Cr
+        ))
     );
     assert_eq!(
         errors[2].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Lfcr, LineEndingStyle::Crlf))
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(
+            LineEndingStyle::Lfcr,
+            LineEndingStyle::Crlf
+        ))
     );
 }
 
@@ -472,36 +558,48 @@ fn test_line_ending_mix_amount() {
         TokenKind::Eof,
     ];
 
-    let errors = check_output_tokens_with_errors(source_lf, &expected);
+    let errors = check_output_token_kinds_with_errors(source_lf, &expected);
 
     assert_eq!(errors.len(), 1);
     assert_eq!(
         errors[0].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Lf, LineEndingStyle::Crlf))
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(
+            LineEndingStyle::Lf,
+            LineEndingStyle::Crlf
+        ))
     );
 
-    let errors = check_output_tokens_with_errors(source_cr, &expected);
+    let errors = check_output_token_kinds_with_errors(source_cr, &expected);
 
     assert_eq!(errors.len(), 1);
     assert_eq!(
         errors[0].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Cr, LineEndingStyle::Lf))
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(
+            LineEndingStyle::Cr,
+            LineEndingStyle::Lf
+        ))
     );
 
-    let errors = check_output_tokens_with_errors(source_crlf, &expected);
+    let errors = check_output_token_kinds_with_errors(source_crlf, &expected);
 
     assert_eq!(errors.len(), 1);
     assert_eq!(
         errors[0].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Crlf, LineEndingStyle::Lf))
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(
+            LineEndingStyle::Crlf,
+            LineEndingStyle::Lf
+        ))
     );
 
-    let errors = check_output_tokens_with_errors(source_lfcr, &expected);
+    let errors = check_output_token_kinds_with_errors(source_lfcr, &expected);
 
     assert_eq!(errors.len(), 1);
     assert_eq!(
         errors[0].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Lfcr, LineEndingStyle::Lf))
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(
+            LineEndingStyle::Lfcr,
+            LineEndingStyle::Lf
+        ))
     );
 }
 
@@ -516,7 +614,7 @@ fn test_bad_chars() {
         TokenKind::Eof,
     ];
 
-    let errors = check_output_tokens_with_errors(source, &expected);
+    let errors = check_output_token_kinds_with_errors(source, &expected);
 
     assert_eq!(errors.len(), 1);
     assert_eq!(

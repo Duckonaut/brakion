@@ -15,6 +15,7 @@ mod lexer;
 mod parser;
 mod tokens;
 mod unit;
+mod line_endings;
 
 #[cfg(test)]
 mod tests;
