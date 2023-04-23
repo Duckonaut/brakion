@@ -225,33 +225,32 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn single_char_token(&mut self) -> TokenizeResult {
-        let token_kind = match self.current {
-            Some('(') => Some(TokenKind::LeftParen),
-            Some(')') => Some(TokenKind::RightParen),
-            Some('{') => Some(TokenKind::LeftBrace),
-            Some('}') => Some(TokenKind::RightBrace),
-            Some('[') => Some(TokenKind::LeftBracket),
-            Some(']') => Some(TokenKind::RightBracket),
-            Some(',') => Some(TokenKind::Comma),
-            Some('.') => Some(TokenKind::Dot),
-            Some('+') => Some(TokenKind::Plus),
-            Some(';') => Some(TokenKind::Semicolon),
-            Some('/') => Some(TokenKind::Slash),
-            Some('*') => Some(TokenKind::Star),
-            Some('|') => Some(TokenKind::Pipe),
-            Some('?') => Some(TokenKind::Question),
-            _ => None,
-        };
-
-        if let Some(token_kind) = token_kind {
-            let token = Token::new(token_kind, self.span());
+    fn single_char_token_case(&mut self, c: char, kind: TokenKind) -> TokenizeResult {
+        if self.current == Some(c) {
             self.advance();
-
-            return TokenizeResult::Some(token);
+            TokenizeResult::Some(Token::new(kind, self.span()))
+        } else {
+            TokenizeResult::None
         }
+    }
 
-        TokenizeResult::None
+    fn single_char_token(&mut self) -> TokenizeResult {
+        try_all_paths!(
+            self.single_char_token_case('(', TokenKind::LeftParen),
+            self.single_char_token_case(')', TokenKind::RightParen),
+            self.single_char_token_case('{', TokenKind::LeftBrace),
+            self.single_char_token_case('}', TokenKind::RightBrace),
+            self.single_char_token_case('[', TokenKind::LeftBracket),
+            self.single_char_token_case(']', TokenKind::RightBracket),
+            self.single_char_token_case(',', TokenKind::Comma),
+            self.single_char_token_case('.', TokenKind::Dot),
+            self.single_char_token_case('+', TokenKind::Plus),
+            self.single_char_token_case(';', TokenKind::Semicolon),
+            self.single_char_token_case('/', TokenKind::Slash),
+            self.single_char_token_case('*', TokenKind::Star),
+            self.single_char_token_case('|', TokenKind::Pipe),
+            self.single_char_token_case('?', TokenKind::Question),
+        )
     }
 
     fn double_char_token_case(
