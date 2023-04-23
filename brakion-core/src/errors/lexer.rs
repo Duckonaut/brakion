@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use crate::lexer::LineEndingStyle;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LexerError {
     UnexpectedCharacter(char),
@@ -10,7 +12,7 @@ pub enum LexerError {
     StringTooLong,
     NumberTooLong,
     IdentifierTooLong,
-    InconsistentLineEndings,
+    InconsistentLineEndings(LineEndingStyle, LineEndingStyle),
 }
 
 impl Display for LexerError {
@@ -24,7 +26,9 @@ impl Display for LexerError {
             Self::StringTooLong => write!(f, "String literal too long"),
             Self::NumberTooLong => write!(f, "Number too long"),
             Self::IdentifierTooLong => write!(f, "Identifier too long"),
-            Self::InconsistentLineEndings => write!(f, "Inconsistent line endings"),
+            Self::InconsistentLineEndings(expected, actual) => {
+                write!(f, "Inconsistent line endings: expected {}, encountered {}", expected, actual)
+            }
         }
     }
 }

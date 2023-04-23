@@ -1,7 +1,7 @@
 use crate::errors::lexer::LexerError;
 use crate::errors::ErrorKind;
 use crate::filters::ParserTokenFilter;
-use crate::lexer::{Lexer, TokenProducer};
+use crate::lexer::{Lexer, TokenProducer, LineEndingStyle};
 use crate::tokens::{Token, TokenKind};
 use crate::unit::Unit;
 use crate::Config;
@@ -377,38 +377,92 @@ fn test_lexer_comments_filter() {
 
 #[test]
 fn test_line_ending_mix() {
-    let source_lf = "a\nb\r\nc";
-    let source_crlf = "a\r\nb\nc";
+    let source_lf = "a\nb\r\nc\rd\n\re";
+    let source_cr = "a\rb\nc\r\nd\n\re";
+    let source_crlf = "a\r\nb\nc\rd\n\re";
+    let source_lfcr = "a\n\rb\nc\rd\r\ne";
 
     let expected = vec![
         TokenKind::Identifier("a".to_string()),
         TokenKind::Identifier("b".to_string()),
         TokenKind::Identifier("c".to_string()),
+        TokenKind::Identifier("d".to_string()),
+        TokenKind::Identifier("e".to_string()),
         TokenKind::Eof,
     ];
 
     let errors = check_output_tokens_with_errors(source_lf, &expected);
 
-    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.len(), 3);
     assert_eq!(
         errors[0].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings)
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Lf, LineEndingStyle::Crlf))
+    );
+    assert_eq!(
+        errors[1].kind,
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Lf, LineEndingStyle::Cr))
+    );
+    assert_eq!(
+        errors[2].kind,
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Lf, LineEndingStyle::Lfcr))
+    );
+
+    let errors = check_output_tokens_with_errors(source_cr, &expected);
+
+    assert_eq!(errors.len(), 3);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Cr, LineEndingStyle::Lf))
+    );
+    assert_eq!(
+        errors[1].kind,
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Cr, LineEndingStyle::Crlf))
+    );
+    assert_eq!(
+        errors[2].kind,
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Cr, LineEndingStyle::Lfcr))
     );
 
     let errors = check_output_tokens_with_errors(source_crlf, &expected);
 
-    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.len(), 3);
     assert_eq!(
         errors[0].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings)
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Crlf, LineEndingStyle::Lf))
+    );
+    assert_eq!(
+        errors[1].kind,
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Crlf, LineEndingStyle::Cr))
+    );
+    assert_eq!(
+        errors[2].kind,
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Crlf, LineEndingStyle::Lfcr))
+    );
+
+    let errors = check_output_tokens_with_errors(source_lfcr, &expected);
+
+    assert_eq!(errors.len(), 3);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Lfcr, LineEndingStyle::Lf))
+    );
+    assert_eq!(
+        errors[1].kind,
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Lfcr, LineEndingStyle::Cr))
+    );
+    assert_eq!(
+        errors[2].kind,
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Lfcr, LineEndingStyle::Crlf))
     );
 }
 
-// Produce only one error per file, not for every bad line ending
+// Produce only one error (of a kind) per file, not for every bad line ending
 #[test]
 fn test_line_ending_mix_amount() {
     let source_lf = "a\nb\r\nc\r\nd";
+    let source_cr = "a\rb\nc\nd";
     let source_crlf = "a\r\nb\nc\nd";
+    let source_lfcr = "a\n\rb\nc\nd";
 
     let expected = vec![
         TokenKind::Identifier("a".to_string()),
@@ -423,7 +477,15 @@ fn test_line_ending_mix_amount() {
     assert_eq!(errors.len(), 1);
     assert_eq!(
         errors[0].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings)
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Lf, LineEndingStyle::Crlf))
+    );
+
+    let errors = check_output_tokens_with_errors(source_cr, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Cr, LineEndingStyle::Lf))
     );
 
     let errors = check_output_tokens_with_errors(source_crlf, &expected);
@@ -431,7 +493,15 @@ fn test_line_ending_mix_amount() {
     assert_eq!(errors.len(), 1);
     assert_eq!(
         errors[0].kind,
-        ErrorKind::LexerError(LexerError::InconsistentLineEndings)
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Crlf, LineEndingStyle::Lf))
+    );
+
+    let errors = check_output_tokens_with_errors(source_lfcr, &expected);
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        errors[0].kind,
+        ErrorKind::LexerError(LexerError::InconsistentLineEndings(LineEndingStyle::Lfcr, LineEndingStyle::Lf))
     );
 }
 

@@ -50,15 +50,30 @@ pub struct Lexer<'a> {
     start_column: usize,
     current_column: usize,
     // Line ending style
-    line_ending_style: Option<LineEndingStyle>,
+    line_ending_style: LineEndingStyle,
     // EOF
     emitted_eof: bool,
 }
 
-#[derive(Debug)]
-enum LineEndingStyle {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineEndingStyle {
+    Unknown,
     Lf,
+    Cr,
+    Lfcr,
     Crlf,
+}
+
+impl std::fmt::Display for LineEndingStyle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LineEndingStyle::Unknown => write!(f, "Unknown"),
+            LineEndingStyle::Lf => write!(f, "LF"),
+            LineEndingStyle::Cr => write!(f, "CR"),
+            LineEndingStyle::Lfcr => write!(f, "LFCR"),
+            LineEndingStyle::Crlf => write!(f, "CRLF"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -88,7 +103,7 @@ impl<'a> Lexer<'a> {
             current_line_start_in_bytes: 0,
             start_column: 1,
             current_column: 1,
-            line_ending_style: None,
+            line_ending_style: LineEndingStyle::Unknown,
             emitted_eof: false,
         }
     }
@@ -145,66 +160,52 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn increment_line(&mut self) {
+        self.current_line += 1;
+        self.current_column = 1;
+        self.current_line_start_in_bytes = self.current_pos_in_bytes;
+    }
+
+    fn signal_inconsistent_line_ending(&mut self, encountered: LineEndingStyle) {
+        self.error_module.lock().unwrap().add_lexer_error_if_first(
+            LexerError::InconsistentLineEndings(self.line_ending_style, encountered),
+            None,
+        );
+    }
+
     fn handle_line_ending(&mut self) {
-        if self.line_ending_style.is_none() {
-            match self.current {
-                Some('\r') => self.line_ending_style = Some(LineEndingStyle::Crlf),
-                Some('\n') => self.line_ending_style = Some(LineEndingStyle::Lf),
-                _ => unreachable!(),
-            }
-        }
+        let encountered = match self.current {
+            Some('\r') => {
+                self.advance();
 
-        match self.line_ending_style {
-            Some(LineEndingStyle::Crlf) => {
-                match self.current {
-                    Some('\r') => {
-                        self.advance();
-
-                        match self.current {
-                            Some('\n') => {
-                                self.advance();
-                            }
-                            _ => {
-                                self.advance();
-                                self.error_module.lock().unwrap().add_lexer_error_if_first(
-                                    LexerError::InconsistentLineEndings,
-                                    None,
-                                )
-                            }
-                        }
-                    }
-                    _ => {
-                        self.advance();
-                        self.error_module
-                            .lock()
-                            .unwrap()
-                            .add_lexer_error_if_first(LexerError::InconsistentLineEndings, None)
-                    }
-                }
-
-                self.current_line += 1;
-                self.current_column = 1;
-                self.current_line_start_in_bytes = self.current_pos_in_bytes;
-            }
-            Some(LineEndingStyle::Lf) => {
                 match self.current {
                     Some('\n') => {
                         self.advance();
+                        LineEndingStyle::Crlf
                     }
-                    _ => {
-                        self.advance();
-                        self.error_module
-                            .lock()
-                            .unwrap()
-                            .add_lexer_error_if_first(LexerError::InconsistentLineEndings, None)
-                    }
+                    _ => LineEndingStyle::Cr,
                 }
+            }
+            Some('\n') => {
+                self.advance();
 
-                self.current_line += 1;
-                self.current_column = 1;
-                self.current_line_start_in_bytes = self.current_pos_in_bytes;
+                match self.current {
+                    Some('\r') => {
+                        self.advance();
+                        LineEndingStyle::Lfcr
+                    }
+                    _ => LineEndingStyle::Lf,
+                }
             }
             _ => unreachable!(),
+        };
+
+        self.increment_line();
+
+        if self.line_ending_style == LineEndingStyle::Unknown {
+            self.line_ending_style = encountered;
+        } else if self.line_ending_style != encountered {
+            self.signal_inconsistent_line_ending(encountered);
         }
     }
 
