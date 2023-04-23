@@ -268,9 +268,8 @@ impl<'a> Lexer<'a> {
             }
 
             if c == '"' {
-                let span = self.span();
                 self.advance();
-                return TokenizeResult::Some(Token::new(TokenKind::String(text), span));
+                return TokenizeResult::Some(Token::new(TokenKind::String(text), self.span()));
             }
 
             // Handle escape sequences, but don't escape them yet.

@@ -306,7 +306,7 @@ fn test_lexer_multiline_string() {
 
     check_output_token_kinds(source, &expected);
 
-    check_output_token_span_positions(source, &[(1, 1, 2, 7)]);
+    check_output_token_span_positions(source, &[(1, 1, 2, 8)]);
 }
 
 #[test]
