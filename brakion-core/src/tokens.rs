@@ -1,26 +1,20 @@
-use std::{
-    fmt::Display,
-    hash::Hash,
-};
+use std::{fmt::Display, hash::Hash};
 
 use crate::unit::Span;
 
 #[derive(Debug, Clone, PartialEq, Hash)]
-pub struct Token<'u>
-{
+pub struct Token {
     pub kind: TokenKind,
-    pub span: Option<Span<'u>>,
+    pub span: Option<Span>,
 }
 
-impl<'u> Token<'u>
-{
-    pub fn new(kind: TokenKind, span: Option<Span<'u>>) -> Self {
+impl Token {
+    pub fn new(kind: TokenKind, span: Option<Span>) -> Self {
         Self { kind, span }
     }
 }
 
-impl<'u> Display for Token<'u>
-{
+impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.span {
             Some(span) => write!(f, "[ {} ] {}", self.kind, span),
@@ -45,6 +39,7 @@ pub enum TokenKind {
     Slash,
     Star,
     Pipe,
+    Question,
 
     // One or two character tokens.
     Colon,
@@ -59,16 +54,16 @@ pub enum TokenKind {
     GreaterEqual,
     Less,
     LessEqual,
-    At,
-    AtEqual,
 
     // Literals.
     Identifier(String),
     String(String),
-    Integer(i64),
+    Char(char),
+    Integer(u64),
     Float(f64),
 
     // Keywords.
+    Pub,
     Mod,
     Fn,
     Type,
@@ -81,6 +76,8 @@ pub enum TokenKind {
     In,
     If,
     Else,
+    Match,
+    On,
     While,
     Break,
     Continue,
@@ -90,7 +87,6 @@ pub enum TokenKind {
     Void,
 
     Eof,
-    Error(String),
     Comment(String),
 }
 
@@ -110,6 +106,7 @@ impl Display for TokenKind {
             TokenKind::Slash => write!(f, "/"),
             TokenKind::Star => write!(f, "*"),
             TokenKind::Pipe => write!(f, "|"),
+            TokenKind::Question => write!(f, "?"),
             TokenKind::Colon => write!(f, ":"),
             TokenKind::DoubleColon => write!(f, "::"),
             TokenKind::Minus => write!(f, "-"),
@@ -122,12 +119,12 @@ impl Display for TokenKind {
             TokenKind::GreaterEqual => write!(f, ">="),
             TokenKind::Less => write!(f, "<"),
             TokenKind::LessEqual => write!(f, "<="),
-            TokenKind::At => write!(f, "@"),
-            TokenKind::AtEqual => write!(f, "@="),
-            TokenKind::Identifier(s) => write!(f, "{s}"),
+            TokenKind::Identifier(s) => write!(f, "ident: {s}"),
             TokenKind::String(s) => write!(f, "\"{s}\""),
+            TokenKind::Char(c) => write!(f, "'{c}'"),
             TokenKind::Integer(n) => write!(f, "{n}"),
             TokenKind::Float(n) => write!(f, "{n}"),
+            TokenKind::Pub => write!(f, "pub"),
             TokenKind::Mod => write!(f, "mod"),
             TokenKind::Fn => write!(f, "fn"),
             TokenKind::Type => write!(f, "type"),
@@ -140,6 +137,8 @@ impl Display for TokenKind {
             TokenKind::In => write!(f, "in"),
             TokenKind::If => write!(f, "if"),
             TokenKind::Else => write!(f, "else"),
+            TokenKind::Match => write!(f, "match"),
+            TokenKind::On => write!(f, "on"),
             TokenKind::While => write!(f, "while"),
             TokenKind::Break => write!(f, "break"),
             TokenKind::Continue => write!(f, "continue"),
@@ -148,7 +147,6 @@ impl Display for TokenKind {
             TokenKind::False => write!(f, "false"),
             TokenKind::Void => write!(f, "void"),
             TokenKind::Eof => write!(f, "EOF"),
-            TokenKind::Error(s) => write!(f, "error: {s}"),
             TokenKind::Comment(s) => write!(f, "#{s}"),
         }
     }
@@ -160,8 +158,13 @@ impl PartialEq for TokenKind {
             (TokenKind::Identifier(s1), TokenKind::Identifier(s2)) => s1 == s2,
             (TokenKind::String(s1), TokenKind::String(s2)) => s1 == s2,
             (TokenKind::Integer(n1), TokenKind::Integer(n2)) => n1 == n2,
-            (TokenKind::Float(n1), TokenKind::Float(n2)) => n1 == n2,
-            (TokenKind::Error(s1), TokenKind::Error(s2)) => s1 == s2,
+            (TokenKind::Float(n1), TokenKind::Float(n2)) => {
+                n1 == n2
+                    || (n1.is_nan() && n2.is_nan())
+                    || (n1.is_infinite() && n2.is_infinite())
+                    // This works relaiably enough for relative precision
+                    || (n1 - n2).abs() <= f64::EPSILON * f64::max(n1.abs(), n2.abs())
+            }
             (TokenKind::Comment(s1), TokenKind::Comment(s2)) => s1 == s2,
             _ => std::mem::discriminant(self) == std::mem::discriminant(other),
         }
@@ -177,7 +180,6 @@ impl Hash for TokenKind {
             TokenKind::Integer(n) => n.hash(state),
             TokenKind::Float(n) => n.to_bits().hash(state),
             TokenKind::Comment(s) => s.hash(state),
-            TokenKind::Error(s) => s.hash(state),
             _ => {}
         }
     }

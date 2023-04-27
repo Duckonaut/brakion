@@ -1,7 +1,8 @@
-use std::{io::stdin, path::PathBuf};
+use std::path::PathBuf;
 
-use brakion_core::interpret;
+use brakion_core::Brakion;
 use clap::Parser;
+use colored::Colorize;
 
 #[derive(Debug, Clone, Parser)]
 #[clap(
@@ -21,6 +22,16 @@ fn main() {
     let filepath = args.file;
 
     let file = std::fs::File::open(filepath.clone()).expect("Could not open file");
-    let reader = std::io::BufReader::new(file);
-    interpret(filepath.as_os_str().to_string_lossy().to_string(), reader, config);
+    let mut brakion = Brakion::new(config);
+
+    brakion.add_unit(filepath.to_str().unwrap().to_string(), file);
+
+    let result = brakion.check();
+
+    match result {
+        Ok(_) => println!("{}", "No errors found".green().bold()),
+        Err(errors) => {
+            println!("{} errors found", errors.len().to_string().red().bold());
+        }
+    }
 }

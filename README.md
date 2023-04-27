@@ -82,12 +82,6 @@ equivalent to the filename (no extension) of another file being interpreted.
 
 Internal namespaces shadow outside ones.
 
-Relevant grammar:
-```
-module =
-    visibility, "mod", IDENTIFIER, "{", {declaration}, "}";
-```
-
 Examples:
 ```
 mod a {
@@ -193,20 +187,6 @@ the execution of blocks is stopped and the following ones are ignored.
 
 An `else` case can be defined as the final one. It will be executed if none of
 the `on` cases match.
-
-Relevant grammar:
-```
-matchStmt =
-    "match", [IDENTIFIER], matchBody;
-
-matchBody =
-    "{", [onClause, {",", onCase}], ["," elseCase], [","], "}";
-
-onCase =
-    "on", (type | expression), statement;
-elseCase =
-    "else", statement;
-```
 
 Examples:
 ```
