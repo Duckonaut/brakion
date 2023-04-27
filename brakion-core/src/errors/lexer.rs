@@ -9,8 +9,6 @@ pub enum LexerError {
     UnterminatedStringLiteral,
     UnterminatedCharLiteral,
     EmptyCharLiteral,
-    CharLiteralNotOneChar,
-    CharLiteralTooLong,
     InvalidEscapeSequence(char),
     StringTooLong,
     NumberTooLong,
@@ -28,8 +26,6 @@ impl LexerError {
             // means EOF was encountered.
             Self::UnterminatedCharLiteral => true, // Same as above.
             Self::EmptyCharLiteral => false,       // Empty character literals are allowed.
-            Self::CharLiteralNotOneChar => false, // This means the character literal is too long, but parsable
-            Self::CharLiteralTooLong => true, // This means the character literal is too long to
                                               // parse. Stop to avoid infinite loops.
             Self::InvalidEscapeSequence(_) => false, // Invalid escape sequences don't mean
                                                      // everything is broken.
@@ -50,8 +46,6 @@ impl Display for LexerError {
             Self::UnterminatedStringLiteral => write!(f, "Unterminated string literal"),
             Self::UnterminatedCharLiteral => write!(f, "Unterminated character literal"),
             Self::EmptyCharLiteral => write!(f, "Empty character literal"),
-            Self::CharLiteralTooLong => write!(f, "Character literal too long"),
-            Self::CharLiteralNotOneChar => write!(f, "Character literal not one character"),
             Self::InvalidEscapeSequence(c) => write!(f, "Invalid escape sequence '\\{}'", c),
             Self::StringTooLong => write!(f, "String literal too long"),
             Self::NumberTooLong => write!(f, "Number too long"),

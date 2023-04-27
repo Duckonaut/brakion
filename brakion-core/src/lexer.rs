@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::errors::lexer::LexerError;
 use crate::errors::ErrorModuleRef;
+use crate::line_endings::LINE_ENDING;
 use crate::line_endings::LineEndingStyle;
 use crate::tokens::Token;
 use crate::tokens::TokenKind;
@@ -41,17 +42,13 @@ pub struct Lexer<'a> {
     // Current character
     current: Option<char>,
     // Positioning
-    start: usize,
-    current_pos: usize,
     current_pos_in_bytes: usize,
-    start_line: usize,
-    start_line_start_in_bytes: usize,
-    current_line: usize,
-    current_line_start_in_bytes: usize,
-    start_column: usize,
-    current_column: usize,
+    start_pos: Location,
+    current_pos: Location,
     // Line ending style
     line_ending_style: LineEndingStyle,
+    // Cached char to emit (required for newline handling)
+    cached_char: Option<char>,
     // EOF
     emitted_eof: bool,
 }
@@ -74,26 +71,18 @@ impl<'a> Lexer<'a> {
             unit,
             error_module,
             current,
-            start: 0,
-            current_pos: 0,
             current_pos_in_bytes: 0,
-            start_line: 1,
-            start_line_start_in_bytes: 0,
-            current_line: 1,
-            current_line_start_in_bytes: 0,
-            start_column: 1,
-            current_column: 1,
+            start_pos: Location::new(1, 0, 1),
+            current_pos: Location::new(1, 0, 1),
             line_ending_style: LineEndingStyle::Unknown,
+            cached_char: None,
             emitted_eof: false,
         }
     }
 
     pub fn next_token(&mut self) -> Option<Token> {
         self.skip_whitespace();
-        self.start = self.current_pos;
-        self.start_line = self.current_line;
-        self.start_column = self.current_column;
-        self.start_line_start_in_bytes = self.current_line_start_in_bytes;
+        self.start_pos = self.current_pos;
 
         let token = try_all_paths!(
             self.single_char_token(),
@@ -145,50 +134,11 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn increment_line(&mut self) {
-        self.current_line += 1;
-        self.current_column = 1;
-        self.current_line_start_in_bytes = self.current_pos_in_bytes;
-    }
-
-    fn signal_inconsistent_line_ending(&mut self, encountered: LineEndingStyle) {
-        self.error_module.lock().unwrap().add_lexer_error_if_first(
-            LexerError::InconsistentLineEndings(self.line_ending_style, encountered),
-            None,
-        );
-    }
-
-    fn handle_line_ending(&mut self) -> LineEndingStyle {
-        let encountered = LineEndingStyle::get_line_ending(
-            &mut *self,
-            |s| s.current,
-            |s| {
-                s.advance();
-            },
-        )
-        .unwrap(); // Handle line ending is only called when a line ending starts.
-
-        self.increment_line();
-
-        if self.line_ending_style == LineEndingStyle::Unknown {
-            self.line_ending_style = encountered;
-        } else if self.line_ending_style != encountered {
-            self.signal_inconsistent_line_ending(encountered);
-        }
-
-        encountered
-    }
-
     fn skip_whitespace(&mut self) {
         while let Some(c) = self.current {
             match c {
-                ' ' | '\t' => {
+                ' ' | '\t' | '\n' => {
                     self.advance();
-                }
-                '\n' | '\r' => {
-                    self.handle_line_ending();
-                    self.start_line = self.current_line;
-                    self.start_column = self.current_column;
                 }
                 _ => break,
             }
@@ -259,37 +209,34 @@ impl<'a> Lexer<'a> {
 
         let mut text = String::new();
 
-        while let Some(c) = self.current {
-            if c == '\n' || c == '\r' {
-                let line_ending = self.handle_line_ending();
-
-                text.push_str(line_ending.as_str());
-                continue;
+        while self.current.is_some() && self.current.unwrap() != '"' {
+            if text.len() >= self.config.max_string_length {
+                return TokenizeResult::Error(LexerError::StringTooLong);
             }
 
-            if c == '"' {
-                self.advance();
-                return TokenizeResult::Some(Token::new(TokenKind::String(text), self.span()));
-            }
+            let c = self.current.unwrap();
 
-            // Handle escape sequences, but don't escape them yet.
-            if c == '\\' {
-                text.push(c);
+            if c == '\n' {
+                text.push_str(LINE_ENDING); // Is this even needed?
+            }
+            // Handle escape sequences
+            else if c == '\\' {
                 self.advance();
                 if self.current.is_none() {
                     return TokenizeResult::Error(LexerError::UnterminatedStringLiteral);
                 }
 
-                match self.current.unwrap() {
-                    'n' | 'r' | 't' | '\\' | '"' | '\'' | '0' => text.push(self.current.unwrap()),
-                    c => {
-                        text.push(c);
+                match self.escape_char(self.current.unwrap()) {
+                    Some(c) => text.push(c),
+                    None => {
+                        text.push('\\');
+                        text.push(self.current.unwrap());
                         let mut error_span = self.span().unwrap();
                         error_span.start.line = error_span.end.line;
                         error_span.start.column = error_span.end.column - 1;
 
                         self.error_module.lock().unwrap().add_lexer_error(
-                            LexerError::InvalidEscapeSequence(c),
+                            LexerError::InvalidEscapeSequence(self.current.unwrap()),
                             Some(error_span),
                         );
                     }
@@ -298,13 +245,15 @@ impl<'a> Lexer<'a> {
                 text.push(c);
             }
 
-            if self.current_pos - self.start > self.config.max_string_length {
-                return TokenizeResult::Error(LexerError::StringTooLong);
-            }
-
             self.advance();
         }
-        TokenizeResult::Error(LexerError::UnterminatedStringLiteral)
+
+        if self.current.is_none() {
+            TokenizeResult::Error(LexerError::UnterminatedStringLiteral)
+        } else {
+            self.advance();
+            TokenizeResult::Some(Token::new(TokenKind::String(text), self.span()))
+        }
     }
 
     fn char(&mut self) -> TokenizeResult {
@@ -329,17 +278,14 @@ impl<'a> Lexer<'a> {
                 return TokenizeResult::Error(LexerError::UnterminatedCharLiteral);
             }
 
+            let c = self.current.unwrap();
+
             // Handle escape sequences in the lexer for chars
             // As opposed to strings, where we can just handle them in the parser,
             // we need to handle them here to stora as a rust char literal.
-            content = match self.current.unwrap() {
-                'n' => '\n',
-                'r' => '\r',
-                't' => '\t',
-                '0' => '\0',
-                '\'' => '\'',
-                '\\' => '\\',
-                c => {
+            content = match self.escape_char(self.current.unwrap()) {
+                Some(c) => c,
+                None => {
                     self.advance(); // Try to consume the char
                     self.advance(); // Try to consume the '
                     return TokenizeResult::Error(LexerError::InvalidEscapeSequence(c));
@@ -349,22 +295,24 @@ impl<'a> Lexer<'a> {
 
         self.advance();
 
-        if self.match_char('\'') {
-            return TokenizeResult::Some(Token::new(TokenKind::Char(content), self.span()));
+        if !self.match_char('\'') {
+            return TokenizeResult::Error(LexerError::UnterminatedCharLiteral);
         }
 
-        while !self.match_char('\'') && self.current_pos - self.start <= self.config.max_string_length {
-            self.advance();
-            if self.current.is_none() {
-                return TokenizeResult::Error(LexerError::UnterminatedCharLiteral);
-            }
-        }
+        TokenizeResult::Some(Token::new(TokenKind::Char(content), self.span()))
+    }
 
-        if self.current_pos - self.start > self.config.max_string_length {
-            return TokenizeResult::Error(LexerError::CharLiteralTooLong);
+    fn escape_char(&mut self, c: char) -> Option<char> {
+        match c {
+            'n' => Some('\n'),
+            'r' => Some('\r'),
+            't' => Some('\t'),
+            '0' => Some('\0'),
+            '"' => Some('"'),
+            '\'' => Some('\''),
+            '\\' => Some('\\'),
+            _ => None,
         }
-
-        TokenizeResult::Error(LexerError::CharLiteralNotOneChar)
     }
 
     fn comment(&mut self) -> TokenizeResult {
@@ -375,24 +323,12 @@ impl<'a> Lexer<'a> {
         let mut comment = String::new();
 
         loop {
-            let c = self.current;
+            if self.current == Some('\n') || self.current.is_none() {
+                return TokenizeResult::Some(Token::new(TokenKind::Comment(comment), self.span()));
+            }
+            comment.push(self.current.unwrap());
+
             self.advance();
-
-            if self.current == Some('\n') || self.current == Some('\r') {
-                comment.push(c.unwrap());
-
-                self.handle_line_ending();
-                self.start_line = self.current_line;
-                self.start_column = self.current_column;
-
-                return TokenizeResult::Some(Token::new(TokenKind::Comment(comment), self.span()));
-            }
-
-            if c.is_none() {
-                return TokenizeResult::Some(Token::new(TokenKind::Comment(comment), self.span()));
-            }
-
-            comment.push(c.unwrap());
         }
     }
 
@@ -402,70 +338,77 @@ impl<'a> Lexer<'a> {
         }
 
         // Store u64 first, then convert to f64 if longer than len(u64::MAX)
+        let (number, _) = self.build_whole_number();
+
+        let mut number = match number {
+            TokenizeResult::Some(Token { kind, .. }) => kind,
+            TokenizeResult::Error(e) => return TokenizeResult::Error(e),
+            _ => unreachable!(),
+        };
+
+        if let Some('.') = self.current {
+            self.advance();
+            let (result, len) = self.build_whole_number();
+
+            let fraction = match result {
+                TokenizeResult::Some(Token { kind, .. }) => match kind {
+                    TokenKind::Integer(i) => i as f64,
+                    TokenKind::Float(f) => f,
+                    _ => unreachable!(),
+                },
+                TokenizeResult::Error(e) => return TokenizeResult::Error(e),
+                _ => unreachable!(),
+            };
+
+            if let TokenKind::Integer(i) = number {
+                number = TokenKind::Float(i as f64);
+            }
+
+            match number {
+                TokenKind::Float(ref mut n) => {
+                    *n += fraction * 10.0f64.powi(-(len as i32));
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        TokenizeResult::Some(Token::new(number, self.span()))
+    }
+
+    fn build_whole_number(&mut self) -> (TokenizeResult, usize) {
         let mut number: TokenKind = TokenKind::Integer(0);
         let mut number_len = 0;
 
-        while let Some(c) = self.current {
+        while self.current.is_some() && self.current.unwrap().is_ascii_digit() {
             if number_len > self.config.max_number_length {
-                return TokenizeResult::Error(LexerError::NumberTooLong);
+                return (TokenizeResult::Error(LexerError::NumberTooLong), number_len);
             }
-            if c.is_ascii_digit() {
-                let digit = c.to_digit(10).unwrap();
 
-                match number {
-                    TokenKind::Integer(ref mut ni) => {
-                        match ni.checked_mul(10) {
-                            Some(n) => match n.checked_add(digit as u64) {
-                                Some(n) => *ni = n,
-                                None => number = TokenKind::Float(n as f64 + digit as f64),
-                            },
-                            None => {
-                                number = TokenKind::Float((*ni as f64).mul_add(10.0, digit as f64))
-                            }
-                        };
-                    }
-                    TokenKind::Float(ref mut n) => {
-                        *n = n.mul_add(10.0, digit as f64);
-                    }
-                    _ => unreachable!(),
+            let digit = self.current.unwrap().to_digit(10).unwrap();
+
+            match number {
+                TokenKind::Integer(ref mut ni) => {
+                    match ni.checked_mul(10) {
+                        Some(n) => match n.checked_add(digit as u64) {
+                            Some(n) => *ni = n,
+                            None => number = TokenKind::Float(n as f64 + digit as f64),
+                        },
+                        None => number = TokenKind::Float((*ni as f64).mul_add(10.0, digit as f64)),
+                    };
                 }
-                self.advance();
-                number_len += 1;
-            } else {
-                break;
-            }
-        }
-        if let Some(c) = self.current {
-            if c == '.' {
-                self.advance();
-                let mut fraction = 0.1;
-
-                while let Some(c) = self.current {
-                    if number_len > self.config.max_number_length {
-                        return TokenizeResult::Error(LexerError::NumberTooLong);
-                    }
-                    if let TokenKind::Integer(n) = number {
-                        number = TokenKind::Float(n as f64);
-                    }
-
-                    if let TokenKind::Float(ref mut n) = number {
-                        if c.is_ascii_digit() {
-                            let digit = c.to_digit(10).unwrap();
-                            *n += digit as f64 * fraction;
-                            self.advance();
-                            fraction *= 0.1;
-                            number_len += 1;
-                        } else {
-                            break;
-                        }
-                    } else {
-                        unreachable!();
-                    }
+                TokenKind::Float(ref mut n) => {
+                    *n = n.mul_add(10.0, digit as f64);
                 }
-                return TokenizeResult::Some(Token::new(number, self.span()));
+                _ => unreachable!(),
             }
+            self.advance();
+            number_len += 1;
         }
-        TokenizeResult::Some(Token::new(number, self.span()))
+
+        (
+            TokenizeResult::Some(Token::new(number, self.span())),
+            number_len,
+        )
     }
 
     fn identifier_or_keyword(&mut self) -> TokenizeResult {
@@ -475,17 +418,16 @@ impl<'a> Lexer<'a> {
 
         let mut text = String::new();
 
-        while let Some(c) = self.current {
-            if Self::is_valid_in_identifier(c) {
-                text.push(c);
-                self.advance();
-            } else {
-                break;
-            }
+        text.push(self.current.unwrap());
+        self.advance();
 
-            if self.current_pos - self.start > self.config.max_identifier_length {
+        while self.current.is_some() && Self::is_valid_in_identifier(self.current.unwrap()) {
+            if text.len() >= self.config.max_identifier_length {
                 return TokenizeResult::Error(LexerError::IdentifierTooLong);
             }
+
+            text.push(self.current.unwrap());
+            self.advance();
         }
 
         let kind = match text.as_str() {
@@ -516,28 +458,80 @@ impl<'a> Lexer<'a> {
         TokenizeResult::Some(Token::new(kind, self.span()))
     }
 
+    fn increment_line(&mut self) {
+        self.current_pos.line += 1;
+        self.current_pos.column = 1;
+        self.current_pos.line_start = self.current_pos_in_bytes;
+    }
+
+    fn signal_inconsistent_line_ending(&mut self, encountered: LineEndingStyle) {
+        self.error_module.lock().unwrap().add_lexer_error_if_first(
+            LexerError::InconsistentLineEndings(self.line_ending_style, encountered),
+            None,
+        );
+    }
+
+    fn handle_line_ending(&mut self) {
+        let encountered = match self.current {
+            Some('\r') => {
+                self.current = self.unit.read();
+
+                match self.current {
+                    Some('\n') => LineEndingStyle::Crlf,
+                    _ => {
+                        self.cached_char = self.current;
+                        LineEndingStyle::Cr
+                    }
+                }
+            }
+            Some('\n') => {
+                self.current = self.unit.read();
+
+                match self.current {
+                    Some('\r') => LineEndingStyle::Lfcr,
+                    _ => {
+                        self.cached_char = self.current;
+                        LineEndingStyle::Lf
+                    }
+                }
+            }
+            _ => unreachable!(),
+        };
+
+        if self.line_ending_style == LineEndingStyle::Unknown {
+            self.line_ending_style = encountered;
+        } else if self.line_ending_style != encountered {
+            self.signal_inconsistent_line_ending(encountered);
+        }
+
+        self.current = Some('\n');
+    }
+
     fn advance(&mut self) -> Option<char> {
-        self.current = self.unit.read();
-        self.current_pos += 1;
+        let c = self.current;
+
+        if let Some(c) = self.cached_char {
+            self.current = Some(c);
+            self.cached_char = None;
+        } else {
+            self.current = self.unit.read();
+        }
+
+        if self.current == Some('\n') || self.current == Some('\r') {
+            self.handle_line_ending();
+        }
+
+        self.current_pos.column += 1;
         self.current_pos_in_bytes += self.current.map_or(0, |c| c.len_utf8());
-        self.current_column += 1;
+        if c == Some('\n') {
+            self.increment_line();
+        }
+
         self.current
     }
 
     fn span(&self) -> Option<Span> {
-        Some(Span::new(
-            self.unit.id,
-            Location::new(
-                self.start_line,
-                self.start_line_start_in_bytes,
-                self.start_column,
-            ),
-            Location::new(
-                self.current_line,
-                self.current_line_start_in_bytes,
-                self.current_column,
-            ),
-        ))
+        Some(Span::new(self.unit.id, self.start_pos, self.current_pos))
     }
 
     fn match_char(&mut self, c: char) -> bool {
