@@ -82,8 +82,21 @@ where
             let result = self.parse_decl();
 
             match result {
-                ParserResult::Ok(decl) => decls.push(decl),
-                ParserResult::None => (),
+                ParserResult::Ok(decl) => {
+                    eprintln!("Parsed decl");
+                    dbg!(&decl);
+                    decls.push(decl);
+                }
+                ParserResult::None => {
+                    self.errors.lock().unwrap().add_parser_error(
+                        ParserError::ExpectedDecl,
+                        Some(Span::from_spans(
+                            start_span,
+                            self.token.as_ref().unwrap().span.unwrap(),
+                        )),
+                    );
+                    break;
+                },
                 ParserResult::Err(err, span) => {
                     let fatal = err.is_fatal();
                     self.errors.lock().unwrap().add_parser_error(
@@ -184,9 +197,30 @@ where
 
         let mut body = Vec::new();
 
-        while !self.match_token(TokenKind::RightBrace) {
-            let function = propagate!(self.parse_function());
-            body.push(function);
+        while !self.match_token(TokenKind::RightBrace) && !self.is_at_end {
+            let start_span = self.token_span();
+            if self.match_token(TokenKind::Pub) {
+                self.errors.lock().unwrap().add_parser_error(
+                    ParserError::PubInTraitImpl,
+                    start_span,
+                );
+            }
+
+            let start_span = self.token_span();
+            let function = self.parse_function();
+
+            match function {
+                ParserResult::Ok(function) => body.push(function),
+                ParserResult::None => {
+                    return ParserResult::Err(
+                        ParserError::ExpectedFunction,
+                        start_span,
+                    );
+                }
+                ParserResult::Err(err, span) => {
+                    self.errors.lock().unwrap().add_parser_error(err, span);
+                }
+            }
         }
 
         ParserResult::Ok(DeclKind::Impl {
@@ -262,9 +296,18 @@ where
 
         let mut variants = Vec::new();
 
-        while !self.match_token(TokenKind::RightBrace) && !self.is_at_end {
+        while !self.is_at_end {
             if self.token_kind() == &TokenKind::Pub || self.token_kind() == &TokenKind::Fn {
                 break;
+            }
+            else if self.match_token(TokenKind::RightBrace) {
+                return ParserResult::Ok(DeclKind::Type {
+                    name,
+                    body: TypeBody {
+                        variants,
+                        methods: Vec::new(),
+                    },
+                });
             }
 
             let variant_name = propagate!(self.parse_identifier());

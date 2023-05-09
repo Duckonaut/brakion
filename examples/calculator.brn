@@ -8,7 +8,7 @@ type Value {
 }
 
 impl std::Display for Value {
-    pub fn display(self) -> str {
+    fn display(self) -> str {
         match self {
             on Self::Integer return self.value.to_string(),
             on Self::Boolean return self.value.to_string(),

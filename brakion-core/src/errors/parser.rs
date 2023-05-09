@@ -7,6 +7,8 @@ pub enum ParserError {
     ExpectedDecl,
     ExpectedToken(TokenKind),
     ExpectedIdentifier,
+    ExpectedFunction,
+    PubInTraitImpl,
 }
 
 impl ParserError {
@@ -16,6 +18,8 @@ impl ParserError {
             ParserError::ExpectedDecl => false,
             ParserError::ExpectedToken(_) => true,
             ParserError::ExpectedIdentifier => true,
+            ParserError::ExpectedFunction => true,
+            ParserError::PubInTraitImpl => false,
         }
     }
 }
@@ -28,6 +32,8 @@ impl Display for ParserError {
             }
             ParserError::ExpectedToken(kind) => write!(f, "Expected token: {}", kind),
             ParserError::ExpectedIdentifier => write!(f, "Expected identifier"),
+            ParserError::ExpectedFunction => write!(f, "Expected function"),
+            ParserError::PubInTraitImpl => write!(f, "All trait members are implicitly public. Remove the `pub` keyword"),
         }
     }
 }
