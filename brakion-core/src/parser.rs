@@ -171,8 +171,6 @@ where
             return ParserResult::None;
         }
 
-        dbg!("Parsing impl");
-
         let trait_name = propagate!(self.parse_namespaced_identifier());
 
         propagate!(self.consume_token(TokenKind::For, ParserError::ExpectedToken(TokenKind::For),));
