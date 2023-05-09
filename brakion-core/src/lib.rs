@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use errors::ErrorModuleRef;
 use filters::ParserTokenFilter;
-use lexer::TokenProducer;
+use repr::BrakionTreeVisitor;
 use unit::{ReadSeek, Unit, UnitIdentifier, Units};
 
 pub use config::Config;
@@ -12,11 +12,12 @@ mod config;
 mod errors;
 mod filters;
 mod lexer;
+mod line_endings;
 mod parser;
+mod printer;
+mod repr;
 mod tokens;
 mod unit;
-mod line_endings;
-mod repr;
 
 #[cfg(test)]
 mod tests;
@@ -60,10 +61,16 @@ impl Brakion {
         let unit = &mut self.units[unit_id];
         let unit_name = unit.name().to_string();
         let mut lexer = lexer::Lexer::new(unit, &self.config, self.error_module.clone());
-        let mut filtered = ParserTokenFilter::new(&mut lexer);
+        let filtered = ParserTokenFilter::new(&mut lexer);
 
-        while let Some(token) = filtered.next() {
-            println!("{token} in {}", &unit_name);
+        let mut parser = parser::Parser::new(&self.config, filtered, self.error_module.clone());
+
+        let decls = parser.parse();
+
+        let mut printer = printer::Printer::new();
+
+        for decl in decls {
+            printer.visit_decl(&decl);
         }
     }
 

@@ -1,21 +1,18 @@
-use crate::unit::Span;
-
 use super::{Identifier, NamespacedIdentifier, Stmt};
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq)]
 pub enum Visibility {
     Public,
     Private,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq)]
 pub struct Decl {
     pub visibility: Visibility,
-    pub span: Span,
     pub kind: DeclKind,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq)]
 pub enum DeclKind {
     Module {
         name: Identifier,
@@ -32,58 +29,67 @@ pub enum DeclKind {
     },
     Impl {
         trait_name: NamespacedIdentifier,
-        type_name: NamespacedIdentifier,
-        body: Vec<Decl>,
+        type_name: TypeReference,
+        body: Vec<Function>,
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq)]
 pub struct FunctionSignature {
     pub name: Identifier,
+    pub takes_self: bool,
+    pub self_precondition: Option<TypeReference>,
     pub parameters: Vec<Parameter>,
-    pub return_type: NamespacedIdentifier,
+    pub return_type: TypeReference,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq)]
 pub struct Function {
     pub signature: FunctionSignature,
     pub body: Vec<Stmt>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq)]
 pub struct Parameter {
     pub name: Identifier,
-    pub kind: ParameterKind,
+    pub ty: TypeReference,
+    pub kind: ParameterSpec,
 }
 
-#[derive(Debug)]
-pub enum ParameterKind {
-    Self_,
-    PreconditionedSelf(NamespacedIdentifier),
-    Typed(NamespacedIdentifier),
-    Preconditioned(NamespacedIdentifier, NamespacedIdentifier),
+#[derive(Debug, Hash, PartialEq)]
+pub enum ParameterSpec {
+    Basic,
+    Preconditioned(TypeReference),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq)]
 pub struct TypeBody {
     pub variants: Vec<TypeVariant>,
-    pub methods: Vec<Function>,
+    pub methods: Vec<(Visibility, Function)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq)]
 pub struct TypeVariant {
     pub name: Identifier,
     pub fields: Vec<Field>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq)]
 pub struct Field {
     pub name: Identifier,
-    pub ty: NamespacedIdentifier,
+    pub ty: TypeReference,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq)]
 pub struct TraitBody {
     pub methods: Vec<FunctionSignature>,
 }
 
+#[derive(Debug, Hash, PartialEq)]
+pub enum TypeReference {
+    Void,
+    // TODO: Are builtin types special?
+    Named(NamespacedIdentifier),
+    List(Box<TypeReference>),
+    Union(Vec<TypeReference>),
+}

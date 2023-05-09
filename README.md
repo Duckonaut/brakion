@@ -368,7 +368,7 @@ declaration =
 module =
     "mod", IDENTIFIER, "{", {declaration}, "}";
 function =
-    executableBlock;
+    functionSignature, executableBlock;
 typeDeclaration =
     "type", IDENTIFIER, ( typeDefinition | ";" );
 traitDeclaration =

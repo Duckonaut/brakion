@@ -37,8 +37,6 @@ fn utf8_misalignment_boundary() {
 
     assert_eq!(c.len_utf8(), 4);
 
-    dbg!(&unit);
-
     assert_eq!(unit.read(), Some('a'));
 }
 

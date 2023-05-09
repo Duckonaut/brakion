@@ -2,9 +2,10 @@ use colored::Colorize;
 
 use crate::unit::Span;
 
-use self::lexer::LexerError;
+use self::{lexer::LexerError, parser::ParserError};
 
 pub mod lexer;
+pub mod parser;
 
 pub type ErrorModuleRef = std::sync::Arc<std::sync::Mutex<ErrorModule>>;
 
@@ -30,6 +31,10 @@ impl ErrorModule {
         self.add_error(ErrorKind::LexerError(kind), ErrorLevel::Error, span);
     }
 
+    pub fn add_parser_error(&mut self, kind: ParserError, span: Option<Span>) {
+        self.add_error(ErrorKind::ParserError(kind), ErrorLevel::Error, span);
+    }
+
     pub fn add_error_if_first(&mut self, kind: ErrorKind, level: ErrorLevel, span: Option<Span>) {
         if !self.errors.iter().any(|e| e.kind == kind) {
             self.add_error(kind, level, span);
@@ -38,6 +43,10 @@ impl ErrorModule {
 
     pub fn add_lexer_error_if_first(&mut self, kind: LexerError, span: Option<Span>) {
         self.add_error_if_first(ErrorKind::LexerError(kind), ErrorLevel::Error, span);
+    }
+
+    pub fn add_parser_error_if_first(&mut self, kind: ParserError, span: Option<Span>) {
+        self.add_error_if_first(ErrorKind::ParserError(kind), ErrorLevel::Error, span);
     }
 
     pub fn unrecoverable(&self) -> bool {
@@ -64,6 +73,7 @@ impl ErrorModule {
     ) -> std::io::Result<()> {
         match &error.kind {
             ErrorKind::LexerError(e) => writeln!(f, "{}: {}", "lexer error".red(), e)?,
+            ErrorKind::ParserError(e) => writeln!(f, "{}: {}", "parser error".red(), e)?,
         };
 
         if error.span.is_none() {
@@ -136,9 +146,10 @@ impl Default for ErrorModule {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ErrorKind {
     LexerError(LexerError),
+    ParserError(ParserError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

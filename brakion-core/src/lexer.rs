@@ -1,8 +1,8 @@
 use crate::config::Config;
 use crate::errors::lexer::LexerError;
 use crate::errors::ErrorModuleRef;
-use crate::line_endings::LINE_ENDING;
 use crate::line_endings::LineEndingStyle;
+use crate::line_endings::LINE_ENDING;
 use crate::tokens::Token;
 use crate::tokens::TokenKind;
 use crate::unit::Location;

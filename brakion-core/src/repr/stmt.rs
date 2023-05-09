@@ -1,11 +1,12 @@
-use super::{Expr, NamespacedIdentifier, Identifier};
+use super::{Expr, Identifier, TypeReference};
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq)]
 pub enum Stmt {
     Expr(Expr),
+    Block(Vec<Stmt>),
     Variable {
         name: Identifier,
-        ty: NamespacedIdentifier,
+        ty: TypeReference,
         value: Expr,
     },
     Assign {
@@ -33,15 +34,15 @@ pub enum Stmt {
     Return(Expr),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq)]
 pub struct MatchArm {
     pub pattern: MatchPattern,
     pub body: Box<Stmt>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq)]
 pub enum MatchPattern {
     Expr(Expr),
-    Type(NamespacedIdentifier),
+    Type(TypeReference),
     Wildcard,
 }
