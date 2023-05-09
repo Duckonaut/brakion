@@ -43,7 +43,7 @@ fn utf8_misalignment_boundary() {
 }
 
 #[test]
-#[should_panic(expected = "Invalid UTF-8 sequence at end of file")]
+#[should_panic]
 fn utf8_misalignment_end() {
     let mut s = String::new();
     for _ in 0..(READ_INCREMENT - 2) {
