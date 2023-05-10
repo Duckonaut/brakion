@@ -1,5 +1,5 @@
 fn main() {
-    var s =
+    var s: str =
 "Lorem ipsum dolor sit amet,
 consectetur adipiscing elit,
 sed do eiusmod tempor incididunt
@@ -16,7 +16,7 @@ Excepteur sint occaecat cupidatat
 non proident, sunt in culpa qui
 officia deserunt mollit anim id est laborum.
 ";
-    var f = std::io::open("test.txt", std::io::OpenMode::Write);
+    var f: std::io::File = std::io::open("test.txt", std::io::OpenMode::Write);
     f.write(s);
     f.close();
 }

@@ -4,7 +4,7 @@ mod a {
 
 mod b {
     mod c {
-        fn y() -> i32 { 0 }
+        fn y() -> i32 { return 0; }
     }
 }
 

@@ -1,7 +1,15 @@
+use crate::unit::Span;
+
 use super::{Expr, Identifier, TypeReference};
 
 #[derive(Debug, Hash, PartialEq)]
-pub enum Stmt {
+pub struct Stmt {
+    pub span: Span,
+    pub kind: StmtKind,
+}
+
+#[derive(Debug, Hash, PartialEq)]
+pub enum StmtKind {
     Expr(Expr),
     Block(Vec<Stmt>),
     Variable {
@@ -32,6 +40,8 @@ pub enum Stmt {
         arms: Vec<MatchArm>,
     },
     Return(Expr),
+    Break,
+    Continue,
 }
 
 #[derive(Debug, Hash, PartialEq)]
@@ -42,6 +52,9 @@ pub struct MatchArm {
 
 #[derive(Debug, Hash, PartialEq)]
 pub enum MatchPattern {
+    // ambiguous patterns like `foo::Bar` or `[foo::Bar]` will be
+    // parsed as expressions
+    // the type checker will coerce them to types if possible.
     Expr(Expr),
     Type(TypeReference),
     Wildcard,

@@ -8,18 +8,26 @@ pub enum ParserError {
     ExpectedToken(TokenKind),
     ExpectedIdentifier,
     ExpectedFunction,
+    ExpectedType,
     PubInTraitImpl,
+    UnterminatedScope,
+    ExpectedMatchArm,
+    TooManyFunctionParameters,
 }
 
 impl ParserError {
-    // Whether the lexer should stop processing the file after this error.
+    // Whether the parser should try to recover from this error
     pub fn is_fatal(&self) -> bool {
         match self {
             ParserError::ExpectedDecl => false,
             ParserError::ExpectedToken(_) => true,
             ParserError::ExpectedIdentifier => true,
             ParserError::ExpectedFunction => true,
+            ParserError::ExpectedType => false,
             ParserError::PubInTraitImpl => false,
+            ParserError::UnterminatedScope => true,
+            ParserError::ExpectedMatchArm => true,
+            ParserError::TooManyFunctionParameters => true,
         }
     }
 }
@@ -30,10 +38,21 @@ impl Display for ParserError {
             ParserError::ExpectedDecl => {
                 write!(f, "Expected a module, function, type or trait declaration")
             }
-            ParserError::ExpectedToken(kind) => write!(f, "Expected token: {}", kind),
+            ParserError::ExpectedToken(kind) => write!(f, "Expected token: `{}`", kind),
             ParserError::ExpectedIdentifier => write!(f, "Expected identifier"),
             ParserError::ExpectedFunction => write!(f, "Expected function"),
-            ParserError::PubInTraitImpl => write!(f, "All trait members are implicitly public. Remove the `pub` keyword"),
+            ParserError::ExpectedType => write!(f, "Expected type"),
+            ParserError::PubInTraitImpl => write!(
+                f,
+                "All trait members are implicitly public. Remove the `pub` keyword"
+            ),
+            ParserError::UnterminatedScope => {
+                write!(f, "Unterminated scope starting from this `{{`")
+            }
+            ParserError::ExpectedMatchArm => write!(f, "Expected match arm"),
+            ParserError::TooManyFunctionParameters => {
+                write!(f, "Too many function parameters")
+            }
         }
     }
 }

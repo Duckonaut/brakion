@@ -2,6 +2,7 @@ type Foo {
     pub fn do_something() -> void {
         # do something else
     }
+}
 
 type Bar {
     self {
@@ -18,28 +19,31 @@ type Bar {
 
 type Baz {
     self {
-        c: i32 | Bar | Foo,
+        c: i32 | Bar | Foo | void,
     }
 
     pub fn show(self) -> void {
-        self.c?Bar.show()
+        if self.c is Bar {
+            self.c.show();
+        }
     }
 }
 
 fn main() -> void {
-    var a = Foo;
-    var b = Bar { a: 5, b: a };
-    var c = Baz { c: 5 };
+    var a: Foo = Foo;
+    var b: Bar = Bar -> { a: 5, b: a };
+    var c: Baz = Baz -> { c: 5 };
 
     c.c = void;
 
-    var x = c.c;
+    var x: void = c.c;
 
     match x {
-        on void x.show(),
-        else std::io::println("c is not void"),
+        on void x.show();
+        else std::io::println("c is not void");
     }
 
-    c.c?Foo.do_something();
-    c.c?Bar.do_something();
+    if c.c is Bar or c.c is Foo {
+        c.c.show();
+    }
 }

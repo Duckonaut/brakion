@@ -5,10 +5,10 @@ use crate::tokens::{Token, TokenKind};
 use crate::unit::Span;
 use crate::{errors::ErrorModuleRef, Config};
 
-// Macro for trying to get a match from a list of functions
-// If a function returns a value, the token is returned
-// If a function returns an error, the error is returned
-// If a function returns None, the next function is tried
+/// Macro for trying to get a match from a list of functions
+/// If a function returns a value, the token is returned
+/// If a function returns an error, the error is returned
+/// If a function returns None, the next function is tried
 macro_rules! alternatives {
     () => {
         ParserResult::None
@@ -25,14 +25,62 @@ macro_rules! alternatives {
     };
 }
 
-// Macro as an alternative to ? for ParserResult since it isn't overloadable yet
-// Track https://github.com/rust-lang/rust/issues/84277
+/// Macro as an alternative to ? for ParserResult since it isn't overloadable yet
+/// Track https://github.com/rust-lang/rust/issues/84277
 macro_rules! propagate {
     ($e:expr) => {
         match $e {
             ParserResult::Ok(t) => t,
             ParserResult::Err(e, s) => return ParserResult::Err(e, s),
             ParserResult::None => return ParserResult::None,
+        }
+    };
+}
+
+/// Boilerprate for a binary-type level of the expression parser
+macro_rules! binary_expr {
+    (
+        $self:ident,
+        $next_level:tt,
+        ($token_kind:expr, $binary_op:expr)
+        $(,($token_kind_tail:expr, $binary_op_tail:expr))* $(,)?
+    ) => {
+        {
+            let mut expr = propagate!($self.$next_level());
+
+            loop {
+                let token = $self.token_kind();
+
+                if *token == $token_kind {
+                    $self.next_token();
+                    let right = propagate!($self.$next_level());
+                    expr = Expr {
+                        span: Span::from_spans(expr.span, right.span),
+                        kind: ExprKind::Binary {
+                            left: Box::new(expr),
+                            op: $binary_op,
+                            right: Box::new(right),
+                        },
+                    };
+                }
+                $(else if *token == $token_kind_tail {
+                    $self.next_token();
+                    let right = propagate!($self.$next_level());
+                    expr = Expr {
+                        span: Span::from_spans(expr.span, right.span),
+                        kind: ExprKind::Binary {
+                            left: Box::new(expr),
+                            op: $binary_op_tail,
+                            right: Box::new(right),
+                        },
+                    };
+                })*
+                else {
+                    break;
+                }
+            }
+
+            ParserResult::Ok(expr)
         }
     };
 }
@@ -47,6 +95,7 @@ where
     errors: ErrorModuleRef,
     is_at_end: bool,
     token: Option<Token>,
+    last_span: Option<Span>,
 }
 
 #[derive(Debug)]
@@ -68,6 +117,7 @@ where
             errors,
             is_at_end: false,
             token: None,
+            last_span: None,
         };
 
         s.next_token();
@@ -78,35 +128,26 @@ where
         let mut decls = Vec::new();
 
         while !self.is_at_end {
-            let start_span = self.token.as_ref().unwrap().span.unwrap();
             let result = self.parse_decl();
 
             match result {
                 ParserResult::Ok(decl) => {
-                    eprintln!("Parsed decl");
-                    dbg!(&decl);
                     decls.push(decl);
                 }
                 ParserResult::None => {
-                    self.errors.lock().unwrap().add_parser_error(
-                        ParserError::ExpectedDecl,
-                        Some(Span::from_spans(
-                            start_span,
-                            self.token.as_ref().unwrap().span.unwrap(),
-                        )),
-                    );
+                    self.errors
+                        .lock()
+                        .unwrap()
+                        .add_parser_error(ParserError::ExpectedDecl, self.token_span());
                     break;
-                },
+                }
                 ParserResult::Err(err, span) => {
                     let fatal = err.is_fatal();
                     self.errors.lock().unwrap().add_parser_error(
                         err,
                         match span {
                             Some(span) => Some(span),
-                            None => Some(Span::from_spans(
-                                start_span,
-                                self.token.as_ref().unwrap().span.unwrap(),
-                            )),
+                            None => self.token_span(),
                         },
                     );
 
@@ -200,10 +241,10 @@ where
         while !self.match_token(TokenKind::RightBrace) && !self.is_at_end {
             let start_span = self.token_span();
             if self.match_token(TokenKind::Pub) {
-                self.errors.lock().unwrap().add_parser_error(
-                    ParserError::PubInTraitImpl,
-                    start_span,
-                );
+                self.errors
+                    .lock()
+                    .unwrap()
+                    .add_parser_error(ParserError::PubInTraitImpl, start_span);
             }
 
             let start_span = self.token_span();
@@ -212,10 +253,7 @@ where
             match function {
                 ParserResult::Ok(function) => body.push(function),
                 ParserResult::None => {
-                    return ParserResult::Err(
-                        ParserError::ExpectedFunction,
-                        start_span,
-                    );
+                    return ParserResult::Err(ParserError::ExpectedFunction, start_span);
                 }
                 ParserResult::Err(err, span) => {
                     self.errors.lock().unwrap().add_parser_error(err, span);
@@ -299,8 +337,7 @@ where
         while !self.is_at_end {
             if self.token_kind() == &TokenKind::Pub || self.token_kind() == &TokenKind::Fn {
                 break;
-            }
-            else if self.match_token(TokenKind::RightBrace) {
+            } else if self.match_token(TokenKind::RightBrace) {
                 return ParserResult::Ok(DeclKind::Type {
                     name,
                     body: TypeBody {
@@ -338,7 +375,14 @@ where
                     });
 
                     if !self.match_token(TokenKind::Comma) {
-                        break;
+                        if self.match_token(TokenKind::RightBrace) {
+                            break;
+                        } else {
+                            return ParserResult::Err(
+                                ParserError::ExpectedToken(TokenKind::Comma),
+                                self.token_span(),
+                            );
+                        }
                     }
                 }
 
@@ -405,6 +449,7 @@ where
         let mut takes_self = false;
         let mut self_precondition = None;
         let mut parameters = Vec::new();
+
         if !self.match_token(TokenKind::RightParen) {
             let name = propagate!(self.parse_identifier());
 
@@ -438,6 +483,13 @@ where
                 ));
             } else {
                 while !self.match_token(TokenKind::RightParen) && !self.is_at_end {
+                    if parameters.len() == self.config.max_function_arguments {
+                        return ParserResult::Err(
+                            ParserError::TooManyFunctionParameters,
+                            self.token_span(),
+                        );
+                    }
+
                     let param = propagate!(self.parse_function_param());
                     parameters.push(param);
                     if !self.match_token(TokenKind::Comma) {
@@ -454,7 +506,10 @@ where
         let return_type = if self.match_token(TokenKind::Arrow) {
             propagate!(self.parse_type())
         } else {
-            TypeReference::Void
+            TypeReference {
+                kind: TypeReferenceKind::Void,
+                span: None,
+            }
         };
 
         ParserResult::Ok(FunctionSignature {
@@ -484,6 +539,7 @@ where
     }
 
     pub(crate) fn parse_executable_block(&mut self) -> ParserResult<Vec<Stmt>> {
+        let opening_brace_span = self.token_span();
         if !self.match_token(TokenKind::LeftBrace) {
             return ParserResult::None;
         }
@@ -493,14 +549,579 @@ where
         loop {
             if self.match_token(TokenKind::RightBrace) {
                 break;
-            } else if let ParserResult::Ok(block) = self.parse_executable_block() {
-                stmts.push(Stmt::Block(block));
-            } else {
-                self.next_token();
             }
+            if self.is_at_end {
+                return ParserResult::Err(ParserError::UnterminatedScope, opening_brace_span);
+            }
+
+            let stmt = propagate!(self.parse_stmt());
+
+            stmts.push(stmt);
         }
 
         ParserResult::Ok(stmts)
+    }
+
+    pub(crate) fn parse_stmt(&mut self) -> ParserResult<Stmt> {
+        let start_span = self.token_span();
+
+        let stmt_kind = propagate!(alternatives!(
+            self.parse_block_stmt(),
+            self.parse_variable_stmt(),
+            self.parse_if_stmt(),
+            self.parse_while_stmt(),
+            self.parse_for_stmt(),
+            self.parse_match_stmt(),
+            self.parse_return_stmt(),
+            self.parse_break_stmt(),
+            self.parse_continue_stmt(),
+            self.parse_assignment_or_expr_stmt(), // must be last, catch-all, handles expressions
+        ));
+
+        ParserResult::Ok(Stmt {
+            kind: stmt_kind,
+            span: Span::from_spans(start_span.unwrap(), self.last_token_span().unwrap()),
+        })
+    }
+
+    pub(crate) fn parse_block_stmt(&mut self) -> ParserResult<StmtKind> {
+        ParserResult::Ok(StmtKind::Block(propagate!(self.parse_executable_block())))
+    }
+
+    pub(crate) fn parse_variable_stmt(&mut self) -> ParserResult<StmtKind> {
+        if !self.match_token(TokenKind::Var) {
+            return ParserResult::None;
+        }
+
+        let name = propagate!(self.parse_identifier());
+
+        let ty = if self.match_token(TokenKind::Colon) {
+            propagate!(self.parse_type())
+        } else {
+            TypeReference {
+                kind: TypeReferenceKind::Infer,
+                span: None,
+            }
+        };
+
+        propagate!(self.consume_token(
+            TokenKind::Equal,
+            ParserError::ExpectedToken(TokenKind::Equal),
+        ));
+
+        let value = propagate!(self.parse_expr());
+
+        propagate!(self.consume_token(
+            TokenKind::Semicolon,
+            ParserError::ExpectedToken(TokenKind::Semicolon),
+        ));
+
+        ParserResult::Ok(StmtKind::Variable { name, ty, value })
+    }
+
+    pub(crate) fn parse_if_stmt(&mut self) -> ParserResult<StmtKind> {
+        if !self.match_token(TokenKind::If) {
+            return ParserResult::None;
+        }
+
+        let condition = propagate!(self.parse_expr());
+
+        let then = propagate!(self.parse_stmt());
+
+        let otherwise = if self.match_token(TokenKind::Else) {
+            Some(propagate!(self.parse_stmt()))
+        } else {
+            None
+        };
+
+        ParserResult::Ok(StmtKind::If {
+            condition,
+            then: Box::new(then),
+            otherwise: otherwise.map(Box::new),
+        })
+    }
+
+    pub(crate) fn parse_while_stmt(&mut self) -> ParserResult<StmtKind> {
+        if !self.match_token(TokenKind::While) {
+            return ParserResult::None;
+        }
+
+        let condition = propagate!(self.parse_expr());
+
+        let body = propagate!(self.parse_stmt());
+
+        ParserResult::Ok(StmtKind::While {
+            condition,
+            body: Box::new(body),
+        })
+    }
+
+    pub(crate) fn parse_for_stmt(&mut self) -> ParserResult<StmtKind> {
+        if !self.match_token(TokenKind::For) {
+            return ParserResult::None;
+        }
+
+        let name = propagate!(self.parse_identifier());
+
+        propagate!(self.consume_token(TokenKind::In, ParserError::ExpectedToken(TokenKind::In),));
+
+        let iterable = propagate!(self.parse_expr());
+
+        let body = propagate!(self.parse_stmt());
+
+        ParserResult::Ok(StmtKind::For {
+            name,
+            iterable,
+            body: Box::new(body),
+        })
+    }
+
+    pub(crate) fn parse_match_stmt(&mut self) -> ParserResult<StmtKind> {
+        if !self.match_token(TokenKind::Match) {
+            return ParserResult::None;
+        }
+
+        let brace_span = self.token_span();
+        let expr = if !self.match_token(TokenKind::LeftBrace) {
+            let r = Some(propagate!(self.parse_identifier()));
+            propagate!(self.consume_token(
+                TokenKind::LeftBrace,
+                ParserError::ExpectedToken(TokenKind::LeftBrace),
+            ));
+            r
+        } else {
+            None
+        };
+
+        let mut arms = Vec::new();
+
+        loop {
+            if self.match_token(TokenKind::RightBrace) {
+                break;
+            } else if self.is_at_end {
+                return ParserResult::Err(ParserError::UnterminatedScope, brace_span);
+            }
+
+            if self.match_token(TokenKind::On) {
+                let pattern = propagate!(self.parse_match_pattern());
+
+                let body = propagate!(self.parse_stmt());
+
+                arms.push(MatchArm {
+                    pattern,
+                    body: Box::new(body),
+                });
+            } else if self.match_token(TokenKind::Else) {
+                let body = propagate!(self.parse_stmt());
+                arms.push(MatchArm {
+                    pattern: MatchPattern::Wildcard,
+                    body: Box::new(body),
+                });
+            } else {
+                return ParserResult::Err(ParserError::ExpectedMatchArm, self.token_span());
+            }
+        }
+
+        ParserResult::Ok(StmtKind::Match { expr, arms })
+    }
+
+    pub(crate) fn parse_match_pattern(&mut self) -> ParserResult<MatchPattern> {
+        let expr = propagate!(self.parse_expr());
+
+        let type_ref = expr_to_type_ref(&expr);
+
+        if self.match_token(TokenKind::Pipe) {
+            if type_ref.is_none() {
+                return ParserResult::Err(ParserError::ExpectedType, Some(expr.span));
+            } else {
+                let mut types = vec![type_ref.unwrap()];
+                while self.match_token(TokenKind::Pipe) {
+                    let ty = propagate!(self.parse_type());
+                    types.push(ty);
+                }
+                return ParserResult::Ok(MatchPattern::Type(TypeReference {
+                    kind: TypeReferenceKind::Union(types),
+                    span: Some(Span::from_spans(expr.span, self.last_token_span().unwrap())),
+                }));
+            }
+        }
+
+        ParserResult::Ok(MatchPattern::Expr(expr))
+    }
+
+    pub(crate) fn parse_return_stmt(&mut self) -> ParserResult<StmtKind> {
+        if !self.match_token(TokenKind::Return) {
+            return ParserResult::None;
+        }
+
+        let return_span = self.token_span().unwrap();
+
+        if !self.match_token(TokenKind::Semicolon) {
+            let expr = propagate!(self.parse_expr());
+            propagate!(self.consume_token(
+                TokenKind::Semicolon,
+                ParserError::ExpectedToken(TokenKind::Semicolon),
+            ));
+            ParserResult::Ok(StmtKind::Return(expr))
+        } else {
+            ParserResult::Ok(StmtKind::Return(Expr {
+                kind: ExprKind::Literal(Literal::Void),
+                span: return_span,
+            }))
+        }
+    }
+
+    pub(crate) fn parse_break_stmt(&mut self) -> ParserResult<StmtKind> {
+        if !self.match_token(TokenKind::Break) {
+            return ParserResult::None;
+        }
+
+        propagate!(self.consume_token(
+            TokenKind::Semicolon,
+            ParserError::ExpectedToken(TokenKind::Semicolon),
+        ));
+
+        ParserResult::Ok(StmtKind::Break)
+    }
+
+    pub(crate) fn parse_continue_stmt(&mut self) -> ParserResult<StmtKind> {
+        if !self.match_token(TokenKind::Continue) {
+            return ParserResult::None;
+        }
+
+        propagate!(self.consume_token(
+            TokenKind::Semicolon,
+            ParserError::ExpectedToken(TokenKind::Semicolon),
+        ));
+
+        ParserResult::Ok(StmtKind::Continue)
+    }
+
+    pub(crate) fn parse_assignment_or_expr_stmt(&mut self) -> ParserResult<StmtKind> {
+        let expr = propagate!(self.parse_expr());
+
+        if self.match_token(TokenKind::Semicolon) {
+            return ParserResult::Ok(StmtKind::Expr(expr));
+        }
+
+        propagate!(self.consume_token(
+            TokenKind::Equal,
+            ParserError::ExpectedToken(TokenKind::Equal)
+        ));
+
+        let value = propagate!(self.parse_expr());
+
+        propagate!(self.consume_token(
+            TokenKind::Semicolon,
+            ParserError::ExpectedToken(TokenKind::Semicolon),
+        ));
+
+        ParserResult::Ok(StmtKind::Assign {
+            target: expr,
+            value,
+        })
+    }
+
+    pub(crate) fn parse_expr(&mut self) -> ParserResult<Expr> {
+        self.parse_logical_or_expr()
+    }
+
+    pub(crate) fn parse_logical_or_expr(&mut self) -> ParserResult<Expr> {
+        binary_expr!(self, parse_logical_and_expr, (TokenKind::Or, BinaryOp::Or))
+    }
+
+    pub(crate) fn parse_logical_and_expr(&mut self) -> ParserResult<Expr> {
+        binary_expr!(self, parse_equality_expr, (TokenKind::And, BinaryOp::And))
+    }
+
+    pub(crate) fn parse_equality_expr(&mut self) -> ParserResult<Expr> {
+        binary_expr!(
+            self,
+            parse_is_expr,
+            (TokenKind::EqualEqual, BinaryOp::Eq),
+            (TokenKind::BangEqual, BinaryOp::Neq)
+        )
+    }
+
+    pub(crate) fn parse_is_expr(&mut self) -> ParserResult<Expr> {
+        binary_expr!(self, parse_comparison_expr, (TokenKind::Is, BinaryOp::Is))
+    }
+
+    pub(crate) fn parse_comparison_expr(&mut self) -> ParserResult<Expr> {
+        binary_expr!(
+            self,
+            parse_term_expr,
+            (TokenKind::Greater, BinaryOp::Gt),
+            (TokenKind::GreaterEqual, BinaryOp::Geq),
+            (TokenKind::Less, BinaryOp::Lt),
+            (TokenKind::LessEqual, BinaryOp::Leq)
+        )
+    }
+
+    pub(crate) fn parse_term_expr(&mut self) -> ParserResult<Expr> {
+        binary_expr!(
+            self,
+            parse_factor_expr,
+            (TokenKind::Plus, BinaryOp::Add),
+            (TokenKind::Minus, BinaryOp::Sub)
+        )
+    }
+
+    pub(crate) fn parse_factor_expr(&mut self) -> ParserResult<Expr> {
+        binary_expr!(
+            self,
+            parse_as_expr,
+            (TokenKind::Star, BinaryOp::Mul),
+            (TokenKind::Slash, BinaryOp::Div)
+        )
+    }
+
+    pub(crate) fn parse_as_expr(&mut self) -> ParserResult<Expr> {
+        let mut expr = propagate!(self.parse_unary_expr());
+        loop {
+            let token = self.token_kind();
+            if *token == (TokenKind::As) {
+                self.next_token();
+                let ty = propagate!(self.parse_type());
+                expr = Expr {
+                    span: Span::from_spans(expr.span, ty.span.unwrap()),
+                    kind: ExprKind::Cast {
+                        expr: Box::new(expr),
+                        ty,
+                    },
+                };
+            } else {
+                break;
+            }
+        }
+        ParserResult::Ok(expr)
+    }
+
+    pub(crate) fn parse_unary_expr(&mut self) -> ParserResult<Expr> {
+        let mut ops = vec![];
+
+        let start_span = self.token_span().unwrap();
+
+        loop {
+            if self.match_token(TokenKind::Bang) {
+                ops.push(UnaryOp::Not);
+            } else if self.match_token(TokenKind::Minus) {
+                ops.push(UnaryOp::Neg);
+            } else {
+                break;
+            }
+        }
+
+        let mut expr = propagate!(self.parse_primary_expr());
+
+        for op in ops.into_iter().rev() {
+            let expr_span = expr.span;
+            expr = Expr {
+                kind: ExprKind::Unary {
+                    op,
+                    expr: Box::new(expr),
+                },
+                span: Span::from_spans(start_span, expr_span),
+            };
+        }
+
+        ParserResult::Ok(expr)
+    }
+
+    pub(crate) fn parse_primary_expr(&mut self) -> ParserResult<Expr> {
+        if self.match_token(TokenKind::LeftParen) {
+            let expr = self.parse_expr();
+            propagate!(self.consume_token(
+                TokenKind::RightParen,
+                ParserError::ExpectedToken(TokenKind::RightParen),
+            ));
+            return expr;
+        }
+        let literal_result = self.parse_literal();
+        match literal_result {
+            ParserResult::Ok(literal) => {
+                return ParserResult::Ok(Expr {
+                    kind: ExprKind::Literal(literal),
+                    span: self.token_span().unwrap(),
+                })
+            }
+            ParserResult::Err(e, s) => return ParserResult::Err(e, s),
+            ParserResult::None => {}
+        }
+
+        self.parse_identifier_starting_expr()
+    }
+
+    pub(crate) fn parse_identifier_starting_expr(&mut self) -> ParserResult<Expr> {
+        let name = propagate!(self.parse_namespaced_identifier());
+        let name_span = name.span();
+
+        let mut expr = Expr {
+            kind: ExprKind::Variable(name),
+            span: name_span,
+        };
+
+        if self.match_token(TokenKind::Arrow) {
+            propagate!(self.consume_token(
+                TokenKind::LeftBrace,
+                ParserError::ExpectedToken(TokenKind::LeftBrace),
+            ));
+
+            let brace_span = self.last_token_span();
+            let mut fields = vec![];
+            loop {
+                if self.match_token(TokenKind::RightBrace) {
+                    break;
+                } else if self.is_at_end {
+                    return ParserResult::Err(ParserError::UnterminatedScope, brace_span);
+                }
+
+                let field_name = propagate!(self.parse_identifier());
+
+                if self.match_token(TokenKind::Colon) {
+                    let expr = propagate!(self.parse_expr());
+                    fields.push(FieldConstructor::Named {
+                        name: field_name,
+                        value: expr,
+                    });
+                } else {
+                    fields.push(FieldConstructor::Auto(field_name));
+                }
+
+                if !self.match_token(TokenKind::Comma) {
+                    if self.match_token(TokenKind::RightBrace) {
+                        break;
+                    } else {
+                        return ParserResult::Err(
+                            ParserError::ExpectedToken(TokenKind::RightBrace),
+                            Some(self.token_span().unwrap()),
+                        );
+                    }
+                }
+            }
+
+            let ty = match expr.kind {
+                ExprKind::Variable(name) => Some(name),
+                _ => None,
+            };
+
+            if let Some(ty) = ty {
+                expr = Expr {
+                    kind: ExprKind::Constructor { ty, fields },
+                    span: Span::from_spans(expr.span, self.last_token_span().unwrap()),
+                };
+            } else {
+                return ParserResult::Err(ParserError::ExpectedType, Some(expr.span));
+            }
+        }
+
+        while !self.is_at_end {
+            if self.match_token(TokenKind::Dot) {
+                let field = propagate!(self.parse_identifier());
+                let field_span = field.span;
+                let expr_span = expr.span;
+
+                expr = Expr {
+                    kind: ExprKind::Access {
+                        expr: Box::new(expr),
+                        field,
+                    },
+                    span: Span::from_spans(expr_span, field_span),
+                };
+            } else if self.match_token(TokenKind::LeftParen) {
+                let paren_span = self.last_token_span();
+                let mut args = vec![];
+                loop {
+                    if self.match_token(TokenKind::RightParen) {
+                        break;
+                    } else if self.is_at_end {
+                        return ParserResult::Err(ParserError::UnterminatedScope, paren_span);
+                    }
+
+                    let arg = propagate!(self.parse_expr());
+                    args.push(arg);
+                    if !self.match_token(TokenKind::Comma) {
+                        if !self.match_token(TokenKind::RightParen) {
+                            return ParserResult::Err(ParserError::UnterminatedScope, paren_span);
+                        }
+                        break;
+                    }
+                }
+                let expr_span = expr.span;
+
+                expr = Expr {
+                    kind: ExprKind::Call {
+                        expr: Box::new(expr),
+                        args,
+                    },
+                    span: Span::from_spans(expr_span, self.last_token_span().unwrap()),
+                };
+            } else if self.match_token(TokenKind::LeftBracket) {
+                let index = propagate!(self.parse_expr());
+
+                propagate!(self.consume_token(
+                    TokenKind::RightBracket,
+                    ParserError::ExpectedToken(TokenKind::RightBracket),
+                ));
+
+                let index_span = index.span;
+                let expr_span = expr.span;
+
+                expr = Expr {
+                    kind: ExprKind::Index {
+                        expr: Box::new(expr),
+                        index: Box::new(index),
+                    },
+                    span: Span::from_spans(expr_span, index_span),
+                };
+            } else {
+                break;
+            }
+        }
+
+        ParserResult::Ok(expr)
+    }
+
+    pub(crate) fn parse_literal(&mut self) -> ParserResult<Literal> {
+        if self.match_token(TokenKind::True) {
+            return ParserResult::Ok(Literal::Bool(true));
+        } else if self.match_token(TokenKind::False) {
+            return ParserResult::Ok(Literal::Bool(false));
+        } else if self.match_token(TokenKind::Void) {
+            return ParserResult::Ok(Literal::Void);
+        } else if self.match_token(TokenKind::LeftBracket) {
+            let mut elements = vec![];
+            while !self.match_token(TokenKind::RightBracket) {
+                let element = propagate!(self.parse_expr());
+                elements.push(element);
+                if !self.match_token(TokenKind::Comma) {
+                    break;
+                }
+            }
+            return ParserResult::Ok(Literal::List(elements));
+        }
+
+        if self.token.is_none() {
+            return ParserResult::None;
+        }
+
+        // handle the not-so-simple token kinds
+
+        let result = match self.token.as_ref().unwrap().kind {
+            TokenKind::Integer(i) => ParserResult::Ok(Literal::Int(i)),
+            TokenKind::Float(f) => ParserResult::Ok(Literal::Float(f)),
+            TokenKind::String(ref s) => ParserResult::Ok(Literal::String(s.clone())),
+            TokenKind::Char(c) => ParserResult::Ok(Literal::Char(c)),
+            _ => ParserResult::None,
+        };
+
+        match result {
+            ParserResult::Ok(lit) => {
+                self.next_token();
+                ParserResult::Ok(lit)
+            }
+            _ => result,
+        }
     }
 
     pub(crate) fn parse_type(&mut self) -> ParserResult<TypeReference> {
@@ -514,25 +1135,44 @@ where
         if tys.len() == 1 {
             ParserResult::Ok(tys.pop().unwrap())
         } else {
-            ParserResult::Ok(TypeReference::Union(tys))
+            let tys_span = Span::from_spans(
+                tys.first().unwrap().span.unwrap(),
+                tys.last().unwrap().span.unwrap(),
+            );
+            ParserResult::Ok(TypeReference {
+                kind: TypeReferenceKind::Union(tys),
+                span: Some(tys_span),
+            })
         }
     }
 
     pub(crate) fn parse_type_primary(&mut self) -> ParserResult<TypeReference> {
         if self.match_token(TokenKind::Void) {
-            ParserResult::Ok(TypeReference::Void)
+            ParserResult::Ok(TypeReference {
+                kind: TypeReferenceKind::Void,
+                span: self.last_token_span(),
+            })
         } else if self.match_token(TokenKind::LeftBracket) {
+            let start_span = self.last_token_span().unwrap();
             let ty = propagate!(self.parse_type());
             propagate!(self.consume_token(
                 TokenKind::RightBracket,
                 ParserError::ExpectedToken(TokenKind::RightBracket),
             ));
+            let end_span = self.last_token_span().unwrap();
 
-            ParserResult::Ok(TypeReference::List(Box::new(ty)))
+            ParserResult::Ok(TypeReference {
+                kind: TypeReferenceKind::List(Box::new(ty)),
+                span: Some(Span::from_spans(start_span, end_span)),
+            })
         } else {
             let ty = propagate!(self.parse_namespaced_identifier());
+            let ty_span = ty.span();
 
-            ParserResult::Ok(TypeReference::Named(ty))
+            ParserResult::Ok(TypeReference {
+                kind: TypeReferenceKind::Named(ty),
+                span: Some(ty_span),
+            })
         }
     }
 
@@ -562,6 +1202,9 @@ where
     }
 
     fn next_token(&mut self) {
+        if !(self.last_span.is_none() && !self.is_at_end && self.token.is_none()) {
+            self.last_span = self.token_span();
+        }
         self.token = self.token_producer.next();
         self.is_at_end =
             self.is_at_end || self.token.is_none() || self.token_kind() == &TokenKind::Eof;
@@ -569,6 +1212,10 @@ where
 
     fn token_span(&self) -> Option<Span> {
         self.token.as_ref().unwrap().span
+    }
+
+    fn last_token_span(&self) -> Option<Span> {
+        self.last_span
     }
 
     fn token_kind(&self) -> &TokenKind {

@@ -46,6 +46,8 @@ fn main() {
 
         let result = brakion.check();
 
+        println!();
+
         match result {
             Ok(_) => println!("{}", "No errors found".green().bold()),
             Err(errors) => {

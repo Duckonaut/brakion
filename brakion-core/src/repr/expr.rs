@@ -1,11 +1,18 @@
 use std::hash::Hash;
 
-use super::{NamespacedIdentifier, Identifier};
+use crate::unit::Span;
+
+use super::{NamespacedIdentifier, Identifier, TypeReference};
 
 #[derive(Debug, Hash, PartialEq)]
-pub enum Expr {
+pub struct Expr {
+    pub kind: ExprKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Hash, PartialEq)]
+pub enum ExprKind {
     Literal(Literal),
-    Grouping(Box<Expr>),
     Unary {
         op: UnaryOp,
         expr: Box<Expr>,
@@ -14,6 +21,10 @@ pub enum Expr {
         left: Box<Expr>,
         op: BinaryOp,
         right: Box<Expr>,
+    },
+    Cast {
+        expr: Box<Expr>,
+        ty: TypeReference,
     },
     Variable(NamespacedIdentifier),
     Access {
@@ -24,7 +35,7 @@ pub enum Expr {
         expr: Box<Expr>,
         args: Vec<Expr>,
     },
-    ListAccess {
+    Index {
         expr: Box<Expr>,
         index: Box<Expr>,
     },
@@ -36,7 +47,7 @@ pub enum Expr {
 
 #[derive(Debug, PartialEq)]
 pub enum Literal {
-    Int(i64),
+    Int(u64),
     Float(f64),
     String(String),
     Char(char),
@@ -81,7 +92,6 @@ pub enum BinaryOp {
     Leq,
     Geq,
     Is,
-    As,
 }
 
 #[derive(Debug, Hash, PartialEq)]

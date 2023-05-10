@@ -18,17 +18,17 @@ impl Printer {
         Self
     }
 
-    fn print_function_signature(&mut self, f: &FunctionSignature) {
+    fn print_function_signature(&mut self, f: &mut FunctionSignature) {
         paren_scope! {
             "sig",
             print!(" {}", f.name.name);
-            for param in f.parameters.iter() {
+            for param in f.parameters.iter_mut() {
                 print!(" ");
                 paren_scope! {
                     "param",
                     print!(" {} ", param.name.name);
-                    self.visit_type_reference(&param.ty);
-                    if let ParameterSpec::Preconditioned(ty) = &param.kind {
+                    self.visit_type_reference(&mut param.ty);
+                    if let ParameterSpec::Preconditioned(ty) = &mut param.kind {
                         print!(" ");
                         paren_scope! {
                             "pre ",
@@ -40,24 +40,24 @@ impl Printer {
             print!(" ");
             paren_scope! {
                 "return ",
-                self.visit_type_reference(&f.return_type);
+                self.visit_type_reference(&mut f.return_type);
             }
         }
     }
 }
 
-impl BrakionTreeVisitor for Printer {
-    fn visit_decl(&mut self, decl: &Decl) {
+impl BrakionTreeVisitor<()> for Printer {
+    fn visit_decl(&mut self, decl: &mut Decl) {
         paren_scope! {
             "decl ",
             if let Visibility::Public = decl.visibility {
                 print!("pub ");
             }
 
-            match &decl.kind {
+            match &mut decl.kind {
                 DeclKind::Module { name, body } => {
                     print!("(mod {}", name.name);
-                    for decl in body.iter() {
+                    for decl in body.iter_mut() {
                         print!(" ");
                         self.visit_decl(decl);
                     }
@@ -65,10 +65,10 @@ impl BrakionTreeVisitor for Printer {
                 DeclKind::Function(f) => {
                     paren_scope! {
                     "fn ",
-                    self.print_function_signature(&f.signature);
+                    self.print_function_signature(&mut f.signature);
                         paren_scope! {
                             "body",
-                            for stmt in f.body.iter() {
+                            for stmt in f.body.iter_mut() {
                                 print!(" ");
                                 self.visit_stmt(stmt);
                             }
@@ -78,32 +78,32 @@ impl BrakionTreeVisitor for Printer {
                 DeclKind::Type { name, body } => {
                     paren_scope! {
                         format!("type {}", name.name),
-                        for variant in body.variants.iter() {
+                        for variant in body.variants.iter_mut() {
                             print!(" ");
                             paren_scope! {
                                 format!("variant {}", variant.name.name),
-                                for field in variant.fields.iter() {
+                                for field in variant.fields.iter_mut() {
                                     print!(" ");
                                     paren_scope! {
                                         format!("field {} ", field.name.name),
-                                        self.visit_type_reference(&field.ty);
+                                        self.visit_type_reference(&mut field.ty);
                                     }
                                 }
                             }
                         }
-                        for method in body.methods.iter() {
+                        for method in body.methods.iter_mut() {
                             if let Visibility::Public = method.0 {
                                 print!(" (pub");
                             }
                             print!(" ");
                             paren_scope! {
                                 "method ",
-                                self.print_function_signature(&method.1.signature);
+                                self.print_function_signature(&mut method.1.signature);
 
                                 print!(" ");
                                 paren_scope! {
                                     "body",
-                                    for stmt in method.1.body.iter() {
+                                    for stmt in method.1.body.iter_mut() {
                                         print!(" ");
                                         self.visit_stmt(stmt);
                                     }
@@ -119,7 +119,7 @@ impl BrakionTreeVisitor for Printer {
                 DeclKind::Trait { name, body } => {
                     paren_scope! {
                         format!("trait {}", name.name),
-                        for method in body.methods.iter() {
+                        for method in body.methods.iter_mut() {
                             print!(" ");
 
                             paren_scope! {
@@ -136,22 +136,22 @@ impl BrakionTreeVisitor for Printer {
                 } => {
                     paren_scope! {
                         "impl ",
-                        for ns in trait_name.namespace.iter() {
+                        for ns in trait_name.namespace.iter_mut() {
                             print!("{}::", ns.name);
                         }
                         print!("{}", trait_name.ident.name);
                         print!(" for ");
                         self.visit_type_reference(type_name);
 
-                        for decl in body.iter() {
+                        for decl in body.iter_mut() {
                             print!(" ");
                             paren_scope! {
                                 "member ",
-                                self.print_function_signature(&decl.signature);
+                                self.print_function_signature(&mut decl.signature);
                                 print!(" ");
                                 paren_scope! {
                                     "body",
-                                    for stmt in decl.body.iter() {
+                                    for stmt in decl.body.iter_mut() {
                                         print!(" ");
                                         self.visit_stmt(stmt);
                                     }
@@ -164,24 +164,24 @@ impl BrakionTreeVisitor for Printer {
         }
     }
 
-    fn visit_stmt(&mut self, stmt: &Stmt) {
-        match &stmt {
-            Stmt::Expr(e) => {
+    fn visit_stmt(&mut self, stmt: &mut Stmt) {
+        match &mut stmt.kind {
+            StmtKind::Expr(e) => {
                 paren_scope! {
                     "expr ",
                     self.visit_expr(e);
                 }
             }
-            Stmt::Block(body) => {
+            StmtKind::Block(body) => {
                 paren_scope! {
                     "body",
-                    for stmt in body.iter() {
+                    for stmt in body.iter_mut() {
                         print!(" ");
                         self.visit_stmt(stmt);
                     }
                 }
             }
-            Stmt::Variable { name, ty, value } => {
+            StmtKind::Variable { name, ty, value } => {
                 paren_scope! {
                     format!("var {} ", name.name),
                     self.visit_type_reference(ty);
@@ -189,7 +189,7 @@ impl BrakionTreeVisitor for Printer {
                     self.visit_expr(value);
                 }
             }
-            Stmt::Assign { target, value } => {
+            StmtKind::Assign { target, value } => {
                 paren_scope! {
                     "assign ",
                     self.visit_expr(target);
@@ -197,7 +197,7 @@ impl BrakionTreeVisitor for Printer {
                     self.visit_expr(value);
                 }
             }
-            Stmt::If {
+            StmtKind::If {
                 condition,
                 then,
                 otherwise,
@@ -213,7 +213,7 @@ impl BrakionTreeVisitor for Printer {
                     }
                 }
             }
-            Stmt::While { condition, body } => {
+            StmtKind::While { condition, body } => {
                 paren_scope! {
                     "while ",
                     self.visit_expr(condition);
@@ -221,7 +221,7 @@ impl BrakionTreeVisitor for Printer {
                     self.visit_stmt(body);
                 }
             }
-            Stmt::For {
+            StmtKind::For {
                 name,
                 iterable,
                 body,
@@ -233,7 +233,7 @@ impl BrakionTreeVisitor for Printer {
                     self.visit_stmt(body);
                 }
             }
-            Stmt::Match { expr, arms } => {
+            StmtKind::Match { expr, arms } => {
                 paren_scope! {
                     "match",
                     match expr {
@@ -241,11 +241,11 @@ impl BrakionTreeVisitor for Printer {
                         None => (),
                     }
 
-                    for arm in arms.iter() {
+                    for arm in arms.iter_mut() {
                         print!(" ");
                         paren_scope! {
                             "arm ",
-                            match &arm.pattern {
+                            match &mut arm.pattern {
                                 MatchPattern::Expr(e) => {
                                     paren_scope! {
                                         "expr ",
@@ -262,23 +262,33 @@ impl BrakionTreeVisitor for Printer {
                             }
 
                             print!(" ");
-                            self.visit_stmt(&arm.body);
+                            self.visit_stmt(&mut arm.body);
                         }
                     }
                 }
             }
-            Stmt::Return(e) => {
+            StmtKind::Return(e) => {
                 paren_scope! {
                     "return ",
                     self.visit_expr(e);
                 }
             }
+            StmtKind::Break => {
+                paren_scope! {
+                    "break",
+                }
+            }
+            StmtKind::Continue => {
+                paren_scope! {
+                    "continue",
+                }
+            }
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
-        match &expr {
-            Expr::Literal(l) => match l {
+    fn visit_expr(&mut self, expr: &mut Expr) {
+        match &mut expr.kind {
+            ExprKind::Literal(l) => match l {
                 Literal::Int(i) => print!("{}", i),
                 Literal::Float(f) => print!("{}", f),
                 Literal::String(s) => print!("\"{}\"", s),
@@ -287,7 +297,7 @@ impl BrakionTreeVisitor for Printer {
                 Literal::List(l) => {
                     paren_scope! {
                         "list",
-                        for expr in l.iter() {
+                        for expr in l.iter_mut() {
                             print!(" ");
                             self.visit_expr(expr);
                         }
@@ -295,13 +305,7 @@ impl BrakionTreeVisitor for Printer {
                 }
                 Literal::Void => print!("void"),
             },
-            Expr::Grouping(e) => {
-                paren_scope! {
-                    "group ",
-                    self.visit_expr(e);
-                }
-            }
-            Expr::Unary { op, expr } => {
+            ExprKind::Unary { op, expr } => {
                 paren_scope! {
                     "unary ",
                     match op {
@@ -313,7 +317,7 @@ impl BrakionTreeVisitor for Printer {
                     self.visit_expr(expr);
                 }
             }
-            Expr::Binary { left, op, right } => {
+            ExprKind::Binary { left, op, right } => {
                 paren_scope! {
                     "binary ",
                     match op {
@@ -330,7 +334,6 @@ impl BrakionTreeVisitor for Printer {
                         BinaryOp::And => print!("and"),
                         BinaryOp::Or => print!("or"),
                         BinaryOp::Is => print!("is"),
-                        BinaryOp::As => print!("as"),
                     }
 
                     print!(" ");
@@ -339,33 +342,41 @@ impl BrakionTreeVisitor for Printer {
                     self.visit_expr(right);
                 }
             }
-            Expr::Variable(v) => {
+            ExprKind::Cast { expr, ty } => {
+                paren_scope! {
+                    "cast ",
+                    self.visit_expr(expr);
+                    print!(" as ");
+                    self.visit_type_reference(ty);
+                }
+            }
+            ExprKind::Variable(v) => {
                 paren_scope! {
                     "var ",
-                    for ns in v.namespace.iter() {
+                    for ns in v.namespace.iter_mut() {
                         print!("{}::", ns.name);
                     }
                     print!("{}", v.ident.name);
                 }
             }
-            Expr::Access { expr, field } => {
+            ExprKind::Access { expr, field } => {
                 paren_scope! {
                     "access ",
                     self.visit_expr(expr);
                     print!(" {}", field.name);
                 }
             }
-            Expr::Call { expr, args } => {
+            ExprKind::Call { expr, args } => {
                 paren_scope! {
                     "call ",
                     self.visit_expr(expr);
-                    for arg in args.iter() {
+                    for arg in args.iter_mut() {
                         print!(" ");
                         self.visit_expr(arg);
                     }
                 }
             }
-            Expr::ListAccess { expr, index } => {
+            ExprKind::Index { expr, index } => {
                 paren_scope! {
                     "list-access ",
                     self.visit_expr(expr);
@@ -373,14 +384,14 @@ impl BrakionTreeVisitor for Printer {
                     self.visit_expr(index);
                 }
             }
-            Expr::Constructor { ty, fields } => {
+            ExprKind::Constructor { ty, fields } => {
                 paren_scope! {
                     "ctor ",
-                    for ns in ty.namespace.iter() {
+                    for ns in ty.namespace.iter_mut() {
                         print!("{}::", ns.name);
                     }
                     print!("{}", ty.ident.name);
-                    for field in fields.iter() {
+                    for field in fields.iter_mut() {
                         match field {
                             FieldConstructor::Named { name, value } => {
                                 print!(" ");
@@ -399,28 +410,33 @@ impl BrakionTreeVisitor for Printer {
         }
     }
 
-    fn visit_type_reference(&mut self, ty: &TypeReference) {
-        match &ty {
-            TypeReference::Void => print!("void"),
-            TypeReference::Named(name) => {
-                for ns in name.namespace.iter() {
+    fn visit_type_reference(&mut self, ty: &mut TypeReference) {
+        match &mut ty.kind {
+            TypeReferenceKind::Void => print!("void"),
+            TypeReferenceKind::Named(name) => {
+                for ns in name.namespace.iter_mut() {
                     print!("{}::", ns.name);
                 }
                 print!("{}", name.ident.name);
             }
-            TypeReference::List(ty) => {
+            TypeReferenceKind::List(ty) => {
                 paren_scope! {
                 "list ",
                 self.visit_type_reference(ty);
                 }
             }
-            TypeReference::Union(tys) => {
+            TypeReferenceKind::Union(tys) => {
                 paren_scope! {
                     "union",
-                    for ty in tys.iter() {
+                    for ty in tys.iter_mut() {
                         print!(" ");
                         self.visit_type_reference(ty);
                     }
+                }
+            }
+            TypeReferenceKind::Infer => {
+                paren_scope! {
+                    "infer",
                 }
             }
         }

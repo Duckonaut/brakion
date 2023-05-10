@@ -563,7 +563,7 @@ fn char_too_long() {
 
 #[test]
 fn keywords() {
-    let source = "pub mod fn type trait impl var and or for in if else match on while break continue return true false void";
+    let source = "pub mod fn type trait impl var and or is as for in if else match on while break continue return true false void";
 
     let expected = vec![
         TokenKind::Pub,
@@ -575,6 +575,8 @@ fn keywords() {
         TokenKind::Var,
         TokenKind::And,
         TokenKind::Or,
+        TokenKind::Is,
+        TokenKind::As,
         TokenKind::For,
         TokenKind::In,
         TokenKind::If,

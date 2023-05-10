@@ -1,3 +1,5 @@
+use crate::unit::Span;
+
 use super::{Identifier, NamespacedIdentifier, Stmt};
 
 #[derive(Debug, Hash, PartialEq)]
@@ -86,7 +88,14 @@ pub struct TraitBody {
 }
 
 #[derive(Debug, Hash, PartialEq)]
-pub enum TypeReference {
+pub struct TypeReference {
+    pub span: Option<Span>,
+    pub kind: TypeReferenceKind,
+}
+
+#[derive(Debug, Hash, PartialEq)]
+pub enum TypeReferenceKind {
+    Infer, // Decide at type checking time
     Void,
     // TODO: Are builtin types special?
     Named(NamespacedIdentifier),

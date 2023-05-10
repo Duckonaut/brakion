@@ -65,13 +65,13 @@ impl Brakion {
 
         let mut parser = parser::Parser::new(&self.config, filtered, self.error_module.clone());
 
-        let decls = parser.parse();
+        let mut decls = parser.parse();
 
-        let mut printer = printer::Printer::new();
-
-        for decl in decls {
-            printer.visit_decl(&decl);
-        }
+        // let mut printer = printer::Printer::new();
+        //
+        // for decl in decls.iter_mut() {
+        //     printer.visit_decl(decl);
+        // }
     }
 
     pub fn units(&self) -> &Units {

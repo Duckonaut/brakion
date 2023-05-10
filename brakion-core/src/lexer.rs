@@ -440,6 +440,8 @@ impl<'a> Lexer<'a> {
             "var" => TokenKind::Var,
             "and" => TokenKind::And,
             "or" => TokenKind::Or,
+            "is" => TokenKind::Is,
+            "as" => TokenKind::As,
             "for" => TokenKind::For,
             "in" => TokenKind::In,
             "if" => TokenKind::If,
