@@ -37,13 +37,16 @@ macro_rules! propagate {
     };
 }
 
+/// Parser for the language
+///
+/// Implements a recursive descent parser.
 #[derive(Debug)]
 pub struct Parser<'a, P>
 where
     P: TokenProducer,
 {
     config: &'a Config,
-    pub token_producer: P,
+    token_producer: P,
     errors: ErrorModuleRef,
     is_at_end: bool,
     token: Option<Token>,
@@ -62,6 +65,7 @@ impl<'a, T> Parser<'a, T>
 where
     T: TokenProducer,
 {
+    /// Creates a Parser from a TokenProducer and references to the Config and ErrorModule
     pub fn new(config: &'a Config, token_producer: T, errors: ErrorModuleRef) -> Self {
         let mut s = Self {
             config,
@@ -76,6 +80,10 @@ where
         s
     }
 
+    /// Parses the tokens into a list of Decls.
+    /// If there are any errors, they are added to the ErrorModule
+    /// The ErrorModule should be checked for errors after parsing.
+    /// If there are any errors, the returned list of Decls should not be used.
     pub fn parse(&mut self) -> Vec<Decl> {
         let mut decls = Vec::new();
 
@@ -120,11 +128,6 @@ where
         self.next_token();
 
         while !self.is_at_end {
-            if *self.token_kind() == TokenKind::Semicolon {
-                self.next_token();
-                return;
-            }
-
             match self.token_kind() {
                 TokenKind::Pub
                 | TokenKind::Mod
@@ -172,7 +175,7 @@ where
         }
     }
 
-    pub(crate) fn parse_impl_decl(&mut self) -> ParserResult<DeclKind> {
+    fn parse_impl_decl(&mut self) -> ParserResult<DeclKind> {
         if !self.match_token(TokenKind::Impl) {
             return ParserResult::None;
         }
@@ -220,7 +223,7 @@ where
         })
     }
 
-    pub(crate) fn parse_module_decl(&mut self) -> ParserResult<DeclKind> {
+    fn parse_module_decl(&mut self) -> ParserResult<DeclKind> {
         if !self.match_token(TokenKind::Mod) {
             return ParserResult::None;
         }
@@ -242,20 +245,20 @@ where
         ParserResult::Ok(DeclKind::Module { name, body })
     }
 
-    pub(crate) fn parse_function_decl(&mut self) -> ParserResult<DeclKind> {
+    fn parse_function_decl(&mut self) -> ParserResult<DeclKind> {
         let function = propagate!(self.parse_function());
 
         ParserResult::Ok(DeclKind::Function(function))
     }
 
-    pub(crate) fn parse_function(&mut self) -> ParserResult<Function> {
+    fn parse_function(&mut self) -> ParserResult<Function> {
         let signature = propagate!(self.parse_function_signature());
         let body = propagate!(self.parse_executable_block());
 
         ParserResult::Ok(Function { signature, body })
     }
 
-    pub(crate) fn parse_type_decl(&mut self) -> ParserResult<DeclKind> {
+    fn parse_type_decl(&mut self) -> ParserResult<DeclKind> {
         if !self.match_token(TokenKind::Type) {
             return ParserResult::None;
         }
@@ -359,7 +362,7 @@ where
         })
     }
 
-    pub(crate) fn parse_trait_decl(&mut self) -> ParserResult<DeclKind> {
+    fn parse_trait_decl(&mut self) -> ParserResult<DeclKind> {
         if !self.match_token(TokenKind::Trait) {
             return ParserResult::None;
         }
@@ -388,7 +391,7 @@ where
         })
     }
 
-    pub(crate) fn parse_function_signature(&mut self) -> ParserResult<FunctionSignature> {
+    fn parse_function_signature(&mut self) -> ParserResult<FunctionSignature> {
         if !self.match_token(TokenKind::Fn) {
             return ParserResult::None;
         }
@@ -473,7 +476,7 @@ where
         })
     }
 
-    pub(crate) fn parse_function_param(&mut self) -> ParserResult<Parameter> {
+    fn parse_function_param(&mut self) -> ParserResult<Parameter> {
         let name = propagate!(self.parse_identifier());
         propagate!(self.consume_token(
             TokenKind::Colon,
@@ -490,7 +493,7 @@ where
         ParserResult::Ok(Parameter { name, ty, kind })
     }
 
-    pub(crate) fn parse_executable_block(&mut self) -> ParserResult<Vec<Stmt>> {
+    fn parse_executable_block(&mut self) -> ParserResult<Vec<Stmt>> {
         let opening_brace_span = self.token_span();
         if !self.match_token(TokenKind::LeftBrace) {
             return ParserResult::None;
@@ -536,11 +539,11 @@ where
         })
     }
 
-    pub(crate) fn parse_block_stmt(&mut self) -> ParserResult<StmtKind> {
+    fn parse_block_stmt(&mut self) -> ParserResult<StmtKind> {
         ParserResult::Ok(StmtKind::Block(propagate!(self.parse_executable_block())))
     }
 
-    pub(crate) fn parse_variable_stmt(&mut self) -> ParserResult<StmtKind> {
+    fn parse_variable_stmt(&mut self) -> ParserResult<StmtKind> {
         if !self.match_token(TokenKind::Var) {
             return ParserResult::None;
         }
@@ -571,7 +574,7 @@ where
         ParserResult::Ok(StmtKind::Variable { name, ty, value })
     }
 
-    pub(crate) fn parse_if_stmt(&mut self) -> ParserResult<StmtKind> {
+    fn parse_if_stmt(&mut self) -> ParserResult<StmtKind> {
         if !self.match_token(TokenKind::If) {
             return ParserResult::None;
         }
@@ -593,7 +596,7 @@ where
         })
     }
 
-    pub(crate) fn parse_while_stmt(&mut self) -> ParserResult<StmtKind> {
+    fn parse_while_stmt(&mut self) -> ParserResult<StmtKind> {
         if !self.match_token(TokenKind::While) {
             return ParserResult::None;
         }
@@ -608,7 +611,7 @@ where
         })
     }
 
-    pub(crate) fn parse_for_stmt(&mut self) -> ParserResult<StmtKind> {
+    fn parse_for_stmt(&mut self) -> ParserResult<StmtKind> {
         if !self.match_token(TokenKind::For) {
             return ParserResult::None;
         }
@@ -628,7 +631,7 @@ where
         })
     }
 
-    pub(crate) fn parse_match_stmt(&mut self) -> ParserResult<StmtKind> {
+    fn parse_match_stmt(&mut self) -> ParserResult<StmtKind> {
         if !self.match_token(TokenKind::Match) {
             return ParserResult::None;
         }
@@ -677,7 +680,7 @@ where
         ParserResult::Ok(StmtKind::Match { expr, arms })
     }
 
-    pub(crate) fn parse_match_pattern(&mut self) -> ParserResult<MatchPattern> {
+    fn parse_match_pattern(&mut self) -> ParserResult<MatchPattern> {
         let expr = propagate!(self.parse_expr());
 
         let type_ref = expr_to_type_ref(&expr);
@@ -701,7 +704,7 @@ where
         ParserResult::Ok(MatchPattern::Expr(expr))
     }
 
-    pub(crate) fn parse_return_stmt(&mut self) -> ParserResult<StmtKind> {
+    fn parse_return_stmt(&mut self) -> ParserResult<StmtKind> {
         if !self.match_token(TokenKind::Return) {
             return ParserResult::None;
         }
@@ -723,7 +726,7 @@ where
         }
     }
 
-    pub(crate) fn parse_break_stmt(&mut self) -> ParserResult<StmtKind> {
+    fn parse_break_stmt(&mut self) -> ParserResult<StmtKind> {
         if !self.match_token(TokenKind::Break) {
             return ParserResult::None;
         }
@@ -736,7 +739,7 @@ where
         ParserResult::Ok(StmtKind::Break)
     }
 
-    pub(crate) fn parse_continue_stmt(&mut self) -> ParserResult<StmtKind> {
+    fn parse_continue_stmt(&mut self) -> ParserResult<StmtKind> {
         if !self.match_token(TokenKind::Continue) {
             return ParserResult::None;
         }
@@ -749,7 +752,7 @@ where
         ParserResult::Ok(StmtKind::Continue)
     }
 
-    pub(crate) fn parse_assignment_or_expr_stmt(&mut self) -> ParserResult<StmtKind> {
+    fn parse_assignment_or_expr_stmt(&mut self) -> ParserResult<StmtKind> {
         let expr = propagate!(self.parse_expr());
 
         if self.match_token(TokenKind::Semicolon) {
@@ -778,7 +781,7 @@ where
         self.parse_logical_or_expr()
     }
 
-    fn parse_binary_expr(
+    fn parse_binary_left_assoc_expr(
         &mut self,
         mut next_level: impl FnMut(&mut Self) -> ParserResult<Expr>,
         pairs: &[(TokenKind, BinaryOp)],
@@ -811,22 +814,24 @@ where
         ParserResult::Ok(expr)
     }
 
-    pub(crate) fn parse_logical_or_expr(&mut self) -> ParserResult<Expr> {
-        self.parse_binary_expr(
+    // TODO: or/and short-circuit, so it could be more efficient to parse them as
+    // right-associative?
+    fn parse_logical_or_expr(&mut self) -> ParserResult<Expr> {
+        self.parse_binary_left_assoc_expr(
             Self::parse_logical_and_expr,
             &[(TokenKind::Or, BinaryOp::Or)],
         )
     }
 
-    pub(crate) fn parse_logical_and_expr(&mut self) -> ParserResult<Expr> {
-        self.parse_binary_expr(
+    fn parse_logical_and_expr(&mut self) -> ParserResult<Expr> {
+        self.parse_binary_left_assoc_expr(
             Self::parse_equality_expr,
             &[(TokenKind::And, BinaryOp::And)],
         )
     }
 
-    pub(crate) fn parse_equality_expr(&mut self) -> ParserResult<Expr> {
-        self.parse_binary_expr(
+    fn parse_equality_expr(&mut self) -> ParserResult<Expr> {
+        self.parse_binary_left_assoc_expr(
             Self::parse_is_expr,
             &[
                 (TokenKind::EqualEqual, BinaryOp::Eq),
@@ -835,7 +840,7 @@ where
         )
     }
 
-    pub(crate) fn parse_is_expr(&mut self) -> ParserResult<Expr> {
+    fn parse_is_expr(&mut self) -> ParserResult<Expr> {
         let mut expr = propagate!(self.parse_comparison_expr());
         loop {
             let token = self.token_kind();
@@ -857,8 +862,8 @@ where
         ParserResult::Ok(expr)
     }
 
-    pub(crate) fn parse_comparison_expr(&mut self) -> ParserResult<Expr> {
-        self.parse_binary_expr(
+    fn parse_comparison_expr(&mut self) -> ParserResult<Expr> {
+        self.parse_binary_left_assoc_expr(
             Self::parse_term_expr,
             &[
                 (TokenKind::Greater, BinaryOp::Gt),
@@ -869,8 +874,8 @@ where
         )
     }
 
-    pub(crate) fn parse_term_expr(&mut self) -> ParserResult<Expr> {
-        self.parse_binary_expr(
+    fn parse_term_expr(&mut self) -> ParserResult<Expr> {
+        self.parse_binary_left_assoc_expr(
             Self::parse_factor_expr,
             &[
                 (TokenKind::Plus, BinaryOp::Add),
@@ -879,8 +884,8 @@ where
         )
     }
 
-    pub(crate) fn parse_factor_expr(&mut self) -> ParserResult<Expr> {
-        self.parse_binary_expr(
+    fn parse_factor_expr(&mut self) -> ParserResult<Expr> {
+        self.parse_binary_left_assoc_expr(
             Self::parse_as_expr,
             &[
                 (TokenKind::Star, BinaryOp::Mul),
@@ -889,7 +894,7 @@ where
         )
     }
 
-    pub(crate) fn parse_as_expr(&mut self) -> ParserResult<Expr> {
+    fn parse_as_expr(&mut self) -> ParserResult<Expr> {
         let mut expr = propagate!(self.parse_unary_expr());
         loop {
             let token = self.token_kind();
@@ -911,7 +916,7 @@ where
         ParserResult::Ok(expr)
     }
 
-    pub(crate) fn parse_unary_expr(&mut self) -> ParserResult<Expr> {
+    fn parse_unary_expr(&mut self) -> ParserResult<Expr> {
         let mut ops = vec![];
 
         if self.is_at_end {
@@ -946,14 +951,17 @@ where
         ParserResult::Ok(expr)
     }
 
-    pub(crate) fn parse_primary_expr(&mut self) -> ParserResult<Expr> {
+    fn parse_primary_expr(&mut self) -> ParserResult<Expr> {
         if self.match_token(TokenKind::LeftParen) {
-            let expr = self.parse_expr();
+            let paren_span = self.last_token_span().unwrap();
+            let mut expr = propagate!(self.parse_expr());
             propagate!(self.consume_token(
                 TokenKind::RightParen,
                 ParserError::ExpectedToken(TokenKind::RightParen),
             ));
-            return expr;
+            let span = Span::from_spans(paren_span, self.last_token_span().unwrap());
+            expr.span = span;
+            return ParserResult::Ok(expr);
         }
         if self.is_at_end {
             return ParserResult::None;
@@ -974,7 +982,7 @@ where
         self.parse_identifier_starting_expr()
     }
 
-    pub(crate) fn parse_identifier_starting_expr(&mut self) -> ParserResult<Expr> {
+    fn parse_identifier_starting_expr(&mut self) -> ParserResult<Expr> {
         if self.is_at_end {
             return ParserResult::None;
         }
@@ -1107,7 +1115,7 @@ where
         ParserResult::Ok(expr)
     }
 
-    pub(crate) fn parse_literal(&mut self) -> ParserResult<Literal> {
+    fn parse_literal(&mut self) -> ParserResult<Literal> {
         if self.match_token(TokenKind::True) {
             return ParserResult::Ok(Literal::Bool(true));
         } else if self.match_token(TokenKind::False) {
@@ -1175,7 +1183,7 @@ where
         }
     }
 
-    pub(crate) fn parse_type_primary(&mut self) -> ParserResult<TypeReference> {
+    fn parse_type_primary(&mut self) -> ParserResult<TypeReference> {
         if self.match_token(TokenKind::Void) {
             ParserResult::Ok(TypeReference {
                 kind: TypeReferenceKind::Void,
@@ -1205,7 +1213,7 @@ where
         }
     }
 
-    pub(crate) fn parse_namespaced_identifier(&mut self) -> ParserResult<NamespacedIdentifier> {
+    fn parse_namespaced_identifier(&mut self) -> ParserResult<NamespacedIdentifier> {
         let mut namespace = Vec::new();
         let mut ident = propagate!(self.parse_identifier());
         loop {
@@ -1220,7 +1228,7 @@ where
         ParserResult::Ok(NamespacedIdentifier { namespace, ident })
     }
 
-    pub(crate) fn parse_identifier(&mut self) -> ParserResult<Identifier> {
+    fn parse_identifier(&mut self) -> ParserResult<Identifier> {
         if let TokenKind::Identifier(name) = self.token_kind().clone() {
             let span = self.token_span().unwrap();
             self.next_token();

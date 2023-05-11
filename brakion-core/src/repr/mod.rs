@@ -1,6 +1,6 @@
-mod decl;
-mod expr;
-mod stmt;
+pub mod decl;
+pub mod expr;
+pub mod stmt;
 
 use std::fmt::Display;
 

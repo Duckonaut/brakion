@@ -3,21 +3,21 @@ use std::sync::{Arc, Mutex};
 use errors::ErrorModuleRef;
 use filters::ParserTokenFilter;
 use repr::BrakionTreeVisitor;
-use unit::{ReadSeek, Unit, UnitIdentifier, Units, Location};
+use unit::{Location, ReadSeek, Unit, UnitIdentifier, Units};
 
 pub use config::Config;
 pub use errors::ErrorModule;
 
-mod config;
-mod errors;
-mod filters;
-mod lexer;
-mod line_endings;
-mod parser;
-mod printer;
-mod repr;
-mod tokens;
-mod unit;
+pub mod config;
+pub mod errors;
+pub mod filters;
+pub mod lexer;
+pub mod line_endings;
+pub mod parser;
+pub mod printer;
+pub mod repr;
+pub mod tokens;
+pub mod unit;
 
 #[cfg(test)]
 mod tests;
