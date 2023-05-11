@@ -898,6 +898,10 @@ where
     pub(crate) fn parse_unary_expr(&mut self) -> ParserResult<Expr> {
         let mut ops = vec![];
 
+        if self.is_at_end {
+            return self.parse_primary_expr();
+        }
+
         let start_span = self.token_span().unwrap();
 
         loop {
@@ -951,6 +955,9 @@ where
     }
 
     pub(crate) fn parse_identifier_starting_expr(&mut self) -> ParserResult<Expr> {
+        if self.is_at_end {
+            return ParserResult::None;
+        }
         let name = propagate!(self.parse_namespaced_identifier());
         let name_span = name.span();
 
