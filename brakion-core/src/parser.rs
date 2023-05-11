@@ -939,12 +939,16 @@ where
             ));
             return expr;
         }
+        if self.is_at_end {
+            return ParserResult::None;
+        }
+        let start_span = self.token_span().unwrap();
         let literal_result = self.parse_literal();
         match literal_result {
             ParserResult::Ok(literal) => {
                 return ParserResult::Ok(Expr {
                     kind: ExprKind::Literal(literal),
-                    span: self.token_span().unwrap(),
+                    span: Span::from_spans(start_span, self.last_token_span().unwrap()),
                 })
             }
             ParserResult::Err(e, s) => return ParserResult::Err(e, s),
@@ -1100,6 +1104,10 @@ where
                 let element = propagate!(self.parse_expr());
                 elements.push(element);
                 if !self.match_token(TokenKind::Comma) {
+                    propagate!(self.consume_token(
+                        TokenKind::RightBracket,
+                        ParserError::ExpectedToken(TokenKind::RightBracket),
+                    ));
                     break;
                 }
             }
