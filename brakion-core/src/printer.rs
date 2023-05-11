@@ -1,16 +1,99 @@
+use std::cmp::Ordering;
+
 use crate::repr::*;
 use colored::Colorize;
 
 pub(crate) struct Printer;
 
-macro_rules! paren_scope {
-    { $i:expr, $($t:tt)* } => {
-        print!("({}", $i.bright_blue());
+#[derive(Debug)]
+pub struct PrinterNode {
+    name: String,
+    fields: Vec<PrinterNodeBranch>,
+}
 
-        $($t)*
+#[derive(Debug)]
+enum PrinterNodeBranch {
+    Flag(String),
+    Descriptor(String, String),
+    Field(String, PrinterNode),
+    Node(PrinterNode),
+}
 
-        print!(")");
-    };
+impl PrinterNode {
+    fn new(name: String) -> Self {
+        Self {
+            name,
+            fields: Vec::new(),
+        }
+    }
+
+    pub fn dump(self) {
+        self.print(true, 0);
+    }
+
+    fn flag(&mut self, name: impl ToString) -> &mut Self {
+        self.fields.push(PrinterNodeBranch::Flag(name.to_string()));
+        self
+    }
+
+    fn descriptor(&mut self, name: impl ToString, value: impl ToString) -> &mut Self {
+        self.fields.push(PrinterNodeBranch::Descriptor(
+            name.to_string(),
+            value.to_string(),
+        ));
+        self
+    }
+
+    fn field(&mut self, name: impl ToString, node: PrinterNode) -> &mut Self {
+        self.fields
+            .push(PrinterNodeBranch::Field(name.to_string(), node));
+        self
+    }
+
+    fn node(&mut self, node: PrinterNode) -> &mut Self {
+        self.fields.push(PrinterNodeBranch::Node(node));
+        self
+    }
+
+    fn print(mut self, inline_name: bool, indent: usize) {
+        self.fields.sort_by(|a, b| match (a, b) {
+            (PrinterNodeBranch::Flag(a), PrinterNodeBranch::Flag(b)) => a.cmp(b),
+            (PrinterNodeBranch::Flag(_), _) => Ordering::Less,
+            (_, PrinterNodeBranch::Flag(_)) => Ordering::Greater,
+            (PrinterNodeBranch::Descriptor(_, _), PrinterNodeBranch::Descriptor(_, _)) => Ordering::Equal,
+            (PrinterNodeBranch::Descriptor(_, _), _) => Ordering::Less,
+            (_, PrinterNodeBranch::Descriptor(_, _)) => Ordering::Greater,
+            (PrinterNodeBranch::Field(_, _), PrinterNodeBranch::Field(_, _)) => Ordering::Equal,
+            (PrinterNodeBranch::Field(_, _), _) => Ordering::Less,
+            (_, PrinterNodeBranch::Field(_, _)) => Ordering::Greater,
+            (PrinterNodeBranch::Node(_), PrinterNodeBranch::Node(_)) => Ordering::Equal,
+        });
+        let indent_str = " ".repeat(indent * 2);
+
+        if inline_name {
+            println!("{}", self.name.bold().bright_blue());
+        } else {
+            println!("{}{}", indent_str, self.name.bold().bright_blue());
+        }
+
+        for node in self.fields {
+            match node {
+                PrinterNodeBranch::Flag(name) => {
+                    println!("{}- {}", indent_str, name.bright_yellow().italic());
+                }
+                PrinterNodeBranch::Descriptor(name, value) => {
+                    println!("{}- {}: {}", indent_str, name.bold().bright_green(), value);
+                }
+                PrinterNodeBranch::Field(name, node) => {
+                    print!("{}- {}: ", indent_str, name.bold());
+                    node.print(true, indent + 1);
+                }
+                PrinterNodeBranch::Node(node) => {
+                    node.print(false, indent + 1);
+                }
+            }
+        }
+    }
 }
 
 impl Printer {
@@ -18,427 +101,372 @@ impl Printer {
         Self
     }
 
-    fn print_function_signature(&mut self, f: &mut FunctionSignature) {
-        paren_scope! {
-            "sig",
-            print!(" {}", f.name.name);
-            for param in f.parameters.iter_mut() {
-                print!(" ");
-                paren_scope! {
-                    "param",
-                    print!(" {} ", param.name.name);
-                    self.visit_type_reference(&mut param.ty);
-                    if let ParameterSpec::Preconditioned(ty) = &mut param.kind {
-                        print!(" ");
-                        paren_scope! {
-                            "pre ",
-                            self.visit_type_reference(ty);
-                        }
-                    }
-                }
-            }
-            print!(" ");
-            paren_scope! {
-                "return ",
-                self.visit_type_reference(&mut f.return_type);
+    fn print_function_signature(&mut self, f: &mut FunctionSignature) -> PrinterNode {
+        let mut node = PrinterNode::new("signature".to_string());
+        node.descriptor("name", &f.name.name);
+        node.field("return", self.visit_type_reference(&mut f.return_type));
+
+        for param in f.parameters.iter_mut() {
+            let mut param_node = PrinterNode::new("param".to_string());
+            param_node.descriptor("name", &param.name.name);
+            param_node.field("type", self.visit_type_reference(&mut param.ty));
+            if let ParameterSpec::Preconditioned(ty) = &mut param.kind {
+                param_node.field("precondition", self.visit_type_reference(ty));
             }
         }
+
+        node
     }
 }
 
-impl BrakionTreeVisitor<()> for Printer {
-    fn visit_decl(&mut self, decl: &mut Decl) {
-        paren_scope! {
-            "decl ",
-            if let Visibility::Public = decl.visibility {
-                print!("pub ");
+impl BrakionTreeVisitor for Printer {
+    type ExprResult = PrinterNode;
+    type StmtResult = PrinterNode;
+    type DeclResult = PrinterNode;
+    type TypeReferenceResult = PrinterNode;
+
+    fn visit_decl(&mut self, decl: &mut Decl) -> Self::DeclResult {
+        let mut node = PrinterNode::new("decl".to_string());
+
+        if let Visibility::Public = decl.visibility {
+            node.flag("pub");
+        }
+
+        match &mut decl.kind {
+            DeclKind::Module { name, body } => {
+                let mut module_node = PrinterNode::new("module".to_string());
+                module_node.descriptor("name", &name.name);
+                for decl in body.iter_mut() {
+                    module_node.field("member", self.visit_decl(decl));
+                }
+
+                node.node(module_node);
             }
+            DeclKind::Function(f) => {
+                let mut f_node = PrinterNode::new("fn".to_string());
+                f_node.node(self.print_function_signature(&mut f.signature));
 
-            match &mut decl.kind {
-                DeclKind::Module { name, body } => {
-                    print!("(mod {}", name.name);
-                    for decl in body.iter_mut() {
-                        print!(" ");
-                        self.visit_decl(decl);
-                    }
+                let mut body_node = PrinterNode::new("body".to_string());
+                for stmt in f.body.iter_mut() {
+                    body_node.field("stmt", self.visit_stmt(stmt));
                 }
-                DeclKind::Function(f) => {
-                    paren_scope! {
-                    "fn ",
-                    self.print_function_signature(&mut f.signature);
-                        paren_scope! {
-                            "body",
-                            for stmt in f.body.iter_mut() {
-                                print!(" ");
-                                self.visit_stmt(stmt);
-                            }
-                        }
-                    }
-                }
-                DeclKind::Type { name, body } => {
-                    paren_scope! {
-                        format!("type {}", name.name),
-                        for variant in body.variants.iter_mut() {
-                            print!(" ");
-                            paren_scope! {
-                                format!("variant {}", variant.name.name),
-                                for field in variant.fields.iter_mut() {
-                                    print!(" ");
-                                    paren_scope! {
-                                        format!("field {} ", field.name.name),
-                                        self.visit_type_reference(&mut field.ty);
-                                    }
-                                }
-                            }
-                        }
-                        for method in body.methods.iter_mut() {
-                            if let Visibility::Public = method.0 {
-                                print!(" (pub");
-                            }
-                            print!(" ");
-                            paren_scope! {
-                                "method ",
-                                self.print_function_signature(&mut method.1.signature);
 
-                                print!(" ");
-                                paren_scope! {
-                                    "body",
-                                    for stmt in method.1.body.iter_mut() {
-                                        print!(" ");
-                                        self.visit_stmt(stmt);
-                                    }
-                                }
-                            }
+                f_node.node(body_node);
 
-                            if let Visibility::Public = method.0 {
-                                print!(")");
-                            }
-                        }
-                    }
-                }
-                DeclKind::Trait { name, body } => {
-                    paren_scope! {
-                        format!("trait {}", name.name),
-                        for method in body.methods.iter_mut() {
-                            print!(" ");
+                node.node(f_node);
+            }
+            DeclKind::Type { name, body } => {
+                let mut type_node = PrinterNode::new("type".to_string());
+                type_node.descriptor("name", &name.name);
 
-                            paren_scope! {
-                                "method ",
-                                self.print_function_signature(method);
-                            }
-                        }
-                    }
-                }
-                DeclKind::Impl {
-                    trait_name,
-                    type_name,
-                    body,
-                } => {
-                    paren_scope! {
-                        "impl ",
-                        for ns in trait_name.namespace.iter_mut() {
-                            print!("{}::", ns.name);
-                        }
-                        print!("{}", trait_name.ident.name);
-                        print!(" for ");
-                        self.visit_type_reference(type_name);
+                for variant in body.variants.iter_mut() {
+                    let mut variant_node = PrinterNode::new("variant".to_string());
+                    for field in variant.fields.iter_mut() {
+                        let mut field_node = PrinterNode::new("field".to_string());
+                        field_node.descriptor("name", &field.name.name);
+                        field_node.field("type", self.visit_type_reference(&mut field.ty));
 
-                        for decl in body.iter_mut() {
-                            print!(" ");
-                            paren_scope! {
-                                "member ",
-                                self.print_function_signature(&mut decl.signature);
-                                print!(" ");
-                                paren_scope! {
-                                    "body",
-                                    for stmt in decl.body.iter_mut() {
-                                        print!(" ");
-                                        self.visit_stmt(stmt);
-                                    }
-                                }
-                            }
-                        }
+                        variant_node.node(field_node);
                     }
+                    type_node.node(variant_node);
                 }
+                for method in body.methods.iter_mut() {
+                    let mut method_node = PrinterNode::new("method".to_string());
+                    if let Visibility::Public = method.0 {
+                        method_node.flag("pub");
+                    }
+                    method_node.node(self.print_function_signature(&mut method.1.signature));
+
+                    let mut body_node = PrinterNode::new("body".to_string());
+                    for stmt in method.1.body.iter_mut() {
+                        body_node.field("stmt", self.visit_stmt(stmt));
+                    }
+                    method_node.node(body_node);
+                }
+
+                node.node(type_node);
+            }
+            DeclKind::Trait { name, body } => {
+                let mut trait_node = PrinterNode::new("trait".to_string());
+                trait_node.descriptor("name", &name.name);
+
+                for method in body.methods.iter_mut() {
+                    trait_node.field("method", self.print_function_signature(method));
+                }
+
+                node.node(trait_node);
+            }
+            DeclKind::Impl {
+                trait_name,
+                type_name,
+                body,
+            } => {
+                let mut impl_node = PrinterNode::new("impl".to_string());
+                impl_node.descriptor("trait", &trait_name);
+                impl_node.field("type", self.visit_type_reference(type_name));
+
+                for decl in body.iter_mut() {
+                    let mut member_node = PrinterNode::new("member".to_string());
+                    member_node.node(self.print_function_signature(&mut decl.signature));
+
+                    let mut body_node = PrinterNode::new("body".to_string());
+                    for stmt in decl.body.iter_mut() {
+                        body_node.field("stmt", self.visit_stmt(stmt));
+                    }
+                    member_node.node(body_node);
+                    impl_node.node(member_node);
+                }
+
+                node.node(impl_node);
             }
         }
+
+        node
     }
 
-    fn visit_stmt(&mut self, stmt: &mut Stmt) {
+    fn visit_stmt(&mut self, stmt: &mut Stmt) -> Self::StmtResult {
         match &mut stmt.kind {
             StmtKind::Expr(e) => {
-                paren_scope! {
-                    "expr ",
-                    self.visit_expr(e);
-                }
+                let mut node = PrinterNode::new("expr".to_string());
+                node.field("expr", self.visit_expr(e));
+                node
             }
             StmtKind::Block(body) => {
-                paren_scope! {
-                    "body",
-                    for stmt in body.iter_mut() {
-                        print!(" ");
-                        self.visit_stmt(stmt);
-                    }
+                let mut node = PrinterNode::new("block".to_string());
+                for stmt in body.iter_mut() {
+                    node.field("stmt", self.visit_stmt(stmt));
                 }
+                node
             }
             StmtKind::Variable { name, ty, value } => {
-                paren_scope! {
-                    format!("var {} ", name.name),
-                    self.visit_type_reference(ty);
-                    print!(" ");
-                    self.visit_expr(value);
-                }
+                let mut node = PrinterNode::new("var".to_string());
+                node.descriptor("name", &name.name);
+                node.field("type", self.visit_type_reference(ty));
+                node.field("value", self.visit_expr(value));
+                node
             }
             StmtKind::Assign { target, value } => {
-                paren_scope! {
-                    "assign ",
-                    self.visit_expr(target);
-                    print!(" ");
-                    self.visit_expr(value);
-                }
+                let mut node = PrinterNode::new("assign".to_string());
+                node.field("target", self.visit_expr(target));
+                node.field("value", self.visit_expr(value));
+                node
             }
             StmtKind::If {
                 condition,
                 then,
                 otherwise,
             } => {
-                paren_scope! {
-                "if ",
-                    self.visit_expr(condition);
-                    print!(" ");
-                    self.visit_stmt(then);
-                    if let Some(otherwise) = otherwise {
-                        print!(" ");
-                        self.visit_stmt(otherwise);
-                    }
+                let mut node = PrinterNode::new("if".to_string());
+                node.field("condition", self.visit_expr(condition));
+                node.field("then", self.visit_stmt(then));
+                if let Some(otherwise) = otherwise {
+                    node.field("otherwise", self.visit_stmt(otherwise));
                 }
+                node
             }
             StmtKind::While { condition, body } => {
-                paren_scope! {
-                    "while ",
-                    self.visit_expr(condition);
-                    print!(" ");
-                    self.visit_stmt(body);
-                }
+                let mut node = PrinterNode::new("while".to_string());
+                node.field("condition", self.visit_expr(condition));
+                node.field("body", self.visit_stmt(body));
+                node
             }
             StmtKind::For {
                 name,
                 iterable,
                 body,
             } => {
-                paren_scope! {
-                    format!("for {} in ", name.name),
-                    self.visit_expr(iterable);
-                    print!(" ");
-                    self.visit_stmt(body);
-                }
+                let mut node = PrinterNode::new("for".to_string());
+                node.descriptor("name", &name.name);
+                node.field("iterable", self.visit_expr(iterable));
+                node.field("body", self.visit_stmt(body));
+                node
             }
             StmtKind::Match { expr, arms } => {
-                paren_scope! {
-                    "match",
-                    match expr {
-                        Some(expr) => print!(" {} ", expr.name),
-                        None => (),
+                let mut node = PrinterNode::new("match".to_string());
+                match expr {
+                    Some(expr) => {
+                        node.descriptor("expr", &expr.name);
                     }
+                    None => (),
+                }
 
-                    for arm in arms.iter_mut() {
-                        print!(" ");
-                        paren_scope! {
-                            "arm ",
-                            match &mut arm.pattern {
-                                MatchPattern::Expr(e) => {
-                                    paren_scope! {
-                                        "expr ",
-                                        self.visit_expr(e);
-                                    }
-                                }
-                                MatchPattern::Type(ty) => {
-                                    paren_scope! {
-                                        "type ",
-                                        self.visit_type_reference(ty);
-                                    }
-                                }
-                                MatchPattern::Wildcard => print!("(wildcard)"),
-                            }
-
-                            print!(" ");
-                            self.visit_stmt(&mut arm.body);
+                for arm in arms.iter_mut() {
+                    let mut arm_node = PrinterNode::new("arm".to_string());
+                    match &mut arm.pattern {
+                        MatchPattern::Expr(e) => {
+                            arm_node.field("expr", self.visit_expr(e));
+                        }
+                        MatchPattern::Type(ty) => {
+                            arm_node.field("type", self.visit_type_reference(ty));
+                        }
+                        MatchPattern::Wildcard => {
+                            arm_node.flag("wildcard");
                         }
                     }
+                    arm_node.field("body", self.visit_stmt(&mut arm.body));
+                    node.node(arm_node);
                 }
+
+                node
             }
             StmtKind::Return(e) => {
-                paren_scope! {
-                    "return ",
-                    self.visit_expr(e);
-                }
+                let mut node = PrinterNode::new("return".to_string());
+                node.field("expr", self.visit_expr(e));
+                node
             }
-            StmtKind::Break => {
-                paren_scope! {
-                    "break",
-                }
-            }
-            StmtKind::Continue => {
-                paren_scope! {
-                    "continue",
-                }
-            }
+            StmtKind::Break => PrinterNode::new("break".to_string()),
+            StmtKind::Continue => PrinterNode::new("continue".to_string()),
         }
     }
 
-    fn visit_expr(&mut self, expr: &mut Expr) {
+    fn visit_expr(&mut self, expr: &mut Expr) -> Self::ExprResult {
         match &mut expr.kind {
             ExprKind::Literal(l) => match l {
-                Literal::Int(i) => print!("{}", i),
-                Literal::Float(f) => print!("{}", f),
-                Literal::String(s) => print!("\"{}\"", s),
-                Literal::Char(c) => print!("'{}'", c),
-                Literal::Bool(b) => print!("{}", b),
-                Literal::List(l) => {
-                    paren_scope! {
-                        "list",
-                        for expr in l.iter_mut() {
-                            print!(" ");
-                            self.visit_expr(expr);
-                        }
-                    }
+                Literal::Int(i) => {
+                    let mut node = PrinterNode::new("int".to_string());
+                    node.flag(i);
+                    node
                 }
-                Literal::Void => print!("void"),
+                Literal::Float(f) => {
+                    let mut node = PrinterNode::new("float".to_string());
+                    node.flag(f);
+                    node
+                }
+                Literal::String(s) => {
+                    let mut node = PrinterNode::new("string".to_string());
+                    node.flag(s);
+                    node
+                }
+                Literal::Char(c) => {
+                    let mut node = PrinterNode::new("char".to_string());
+                    node.flag(c);
+                    node
+                }
+                Literal::Bool(b) => {
+                    let mut node = PrinterNode::new("bool".to_string());
+                    node.flag(b);
+                    node
+                }
+                Literal::List(l) => {
+                    let mut node = PrinterNode::new("list".to_string());
+                    for expr in l.iter_mut() {
+                        node.node(self.visit_expr(expr));
+                    }
+                    node
+                }
+                Literal::Void => PrinterNode::new("void".to_string()),
             },
             ExprKind::Unary { op, expr } => {
-                paren_scope! {
-                    "unary ",
-                    match op {
-                        UnaryOp::Neg => print!("-"),
-                        UnaryOp::Not => print!("!"),
-                    }
-
-                    print!(" ");
-                    self.visit_expr(expr);
-                }
+                let mut node = PrinterNode::new("unary".to_string());
+                match op {
+                    UnaryOp::Neg => node.flag("-"),
+                    UnaryOp::Not => node.flag("!"),
+                };
+                node.field("expr", self.visit_expr(expr));
+                node
             }
             ExprKind::Binary { left, op, right } => {
-                paren_scope! {
-                    "binary ",
-                    match op {
-                        BinaryOp::Add => print!("+"),
-                        BinaryOp::Sub => print!("-"),
-                        BinaryOp::Mul => print!("*"),
-                        BinaryOp::Div => print!("/"),
-                        BinaryOp::Eq => print!("=="),
-                        BinaryOp::Neq => print!("!="),
-                        BinaryOp::Lt => print!("<"),
-                        BinaryOp::Gt => print!(">"),
-                        BinaryOp::Leq => print!("<="),
-                        BinaryOp::Geq => print!(">="),
-                        BinaryOp::And => print!("and"),
-                        BinaryOp::Or => print!("or"),
-                        BinaryOp::Is => print!("is"),
-                    }
+                let mut node = PrinterNode::new("binary".to_string());
 
-                    print!(" ");
-                    self.visit_expr(left);
-                    print!(" ");
-                    self.visit_expr(right);
-                }
+                match op {
+                    BinaryOp::Add => node.flag("+"),
+                    BinaryOp::Sub => node.flag("-"),
+                    BinaryOp::Mul => node.flag("*"),
+                    BinaryOp::Div => node.flag("/"),
+                    BinaryOp::Eq => node.flag("=="),
+                    BinaryOp::Neq => node.flag("!="),
+                    BinaryOp::Lt => node.flag("<"),
+                    BinaryOp::Gt => node.flag(">"),
+                    BinaryOp::Leq => node.flag("<="),
+                    BinaryOp::Geq => node.flag(">="),
+                    BinaryOp::And => node.flag("and"),
+                    BinaryOp::Or => node.flag("or"),
+                    BinaryOp::Is => node.flag("is"),
+                };
+
+                node.field("left", self.visit_expr(left));
+                node.field("right", self.visit_expr(right));
+                node
             }
             ExprKind::Cast { expr, ty } => {
-                paren_scope! {
-                    "cast ",
-                    self.visit_expr(expr);
-                    print!(" as ");
-                    self.visit_type_reference(ty);
-                }
+                let mut node = PrinterNode::new("cast".to_string());
+                node.field("expr", self.visit_expr(expr));
+                node.field("type", self.visit_type_reference(ty));
+                node
             }
             ExprKind::Variable(v) => {
-                paren_scope! {
-                    "var ",
-                    for ns in v.namespace.iter_mut() {
-                        print!("{}::", ns.name);
-                    }
-                    print!("{}", v.ident.name);
-                }
+                let mut node = PrinterNode::new("variable".to_string());
+                node.descriptor("name", &v);
+                node
             }
             ExprKind::Access { expr, field } => {
-                paren_scope! {
-                    "access ",
-                    self.visit_expr(expr);
-                    print!(" {}", field.name);
-                }
+                let mut node = PrinterNode::new("access".to_string());
+                node.field("expr", self.visit_expr(expr));
+                node.descriptor("field", &field.name);
+                node
             }
             ExprKind::Call { expr, args } => {
-                paren_scope! {
-                    "call ",
-                    self.visit_expr(expr);
-                    for arg in args.iter_mut() {
-                        print!(" ");
-                        self.visit_expr(arg);
-                    }
+                let mut node = PrinterNode::new("call".to_string());
+                node.field("expr", self.visit_expr(expr));
+                let mut args_node = PrinterNode::new("args".to_string());
+                for arg in args.iter_mut() {
+                    args_node.node(self.visit_expr(arg));
                 }
+                node.node(args_node);
+                node
             }
             ExprKind::Index { expr, index } => {
-                paren_scope! {
-                    "list-access ",
-                    self.visit_expr(expr);
-                    print!(" ");
-                    self.visit_expr(index);
-                }
+                let mut node = PrinterNode::new("index".to_string());
+                node.field("expr", self.visit_expr(expr));
+                node.field("index", self.visit_expr(index));
+                node
             }
             ExprKind::Constructor { ty, fields } => {
-                paren_scope! {
-                    "ctor ",
-                    for ns in ty.namespace.iter_mut() {
-                        print!("{}::", ns.name);
-                    }
-                    print!("{}", ty.ident.name);
-                    for field in fields.iter_mut() {
-                        match field {
-                            FieldConstructor::Named { name, value } => {
-                                print!(" ");
-                                paren_scope! {
-                                    format!("field {} ", name.name),
-                                    self.visit_expr(value);
-                                }
-                            }
-                            FieldConstructor::Auto(name) => {
-                                print!(" (field {})", name.name);
-                            }
+                let mut node = PrinterNode::new("constructor".to_string());
+                node.descriptor("type", ty);
+                let mut fields_node = PrinterNode::new("fields".to_string());
+                for field in fields.iter_mut() {
+                    match field {
+                        FieldConstructor::Named { name, value } => {
+                            let mut field_node = PrinterNode::new("named".to_string());
+                            field_node.descriptor("name", &name.name);
+                            field_node.field("value", self.visit_expr(value));
+                            fields_node.node(field_node);
+                        }
+                        FieldConstructor::Auto(name) => {
+                            let mut field_node = PrinterNode::new("auto".to_string());
+                            field_node.descriptor("name", &name.name);
+                            fields_node.node(field_node);
                         }
                     }
                 }
+                node.node(fields_node);
+                node
             }
         }
     }
 
-    fn visit_type_reference(&mut self, ty: &mut TypeReference) {
+    fn visit_type_reference(&mut self, ty: &mut TypeReference) -> Self::TypeReferenceResult {
         match &mut ty.kind {
-            TypeReferenceKind::Void => print!("void"),
+            TypeReferenceKind::Void => PrinterNode::new("void".to_string()),
             TypeReferenceKind::Named(name) => {
-                for ns in name.namespace.iter_mut() {
-                    print!("{}::", ns.name);
-                }
-                print!("{}", name.ident.name);
+                let mut node = PrinterNode::new("named".to_string());
+                node.descriptor("name", name);
+                node
             }
             TypeReferenceKind::List(ty) => {
-                paren_scope! {
-                "list ",
-                self.visit_type_reference(ty);
-                }
+                let mut node = PrinterNode::new("list".to_string());
+                node.field("type", self.visit_type_reference(ty));
+                node
             }
             TypeReferenceKind::Union(tys) => {
-                paren_scope! {
-                    "union",
-                    for ty in tys.iter_mut() {
-                        print!(" ");
-                        self.visit_type_reference(ty);
-                    }
+                let mut node = PrinterNode::new("union".to_string());
+                for ty in tys.iter_mut() {
+                    node.node(self.visit_type_reference(ty));
                 }
+                node
             }
-            TypeReferenceKind::Infer => {
-                paren_scope! {
-                    "infer",
-                }
-            }
+            TypeReferenceKind::Infer => PrinterNode::new("infer".to_string()),
         }
     }
 }

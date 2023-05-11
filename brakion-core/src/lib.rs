@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use errors::ErrorModuleRef;
 use filters::ParserTokenFilter;
 use repr::BrakionTreeVisitor;
-use unit::{ReadSeek, Unit, UnitIdentifier, Units};
+use unit::{ReadSeek, Unit, UnitIdentifier, Units, Location};
 
 pub use config::Config;
 pub use errors::ErrorModule;
@@ -65,13 +65,23 @@ impl Brakion {
 
         let mut parser = parser::Parser::new(&self.config, filtered, self.error_module.clone());
 
-        let mut decls = parser.parse();
+        let decls = parser.parse();
 
-        // let mut printer = printer::Printer::new();
-        //
-        // for decl in decls.iter_mut() {
-        //     printer.visit_decl(decl);
-        // }
+        let mut unit_module = repr::Decl {
+            visibility: repr::Visibility::Public,
+            kind: repr::DeclKind::Module {
+                name: repr::Identifier {
+                    span: unit::Span::new(unit_id, Location::new(1, 0, 1), Location::new(1, 0, 1)),
+                    name: unit_name,
+                },
+                body: decls,
+            },
+        };
+
+        let mut printer = printer::Printer::new();
+        let printer_node = printer.visit_decl(&mut unit_module);
+
+        printer_node.dump();
     }
 
     pub fn units(&self) -> &Units {
