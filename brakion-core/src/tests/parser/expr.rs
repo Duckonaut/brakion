@@ -79,12 +79,10 @@ fn namespaced_identifier() {
         "foo::Bar",
         Some(Expr {
             kind: ExprKind::Variable(NamespacedIdentifier {
-                namespace: vec![
-                    Identifier {
-                        span: test_span(1, 4),
-                        name: "foo".to_string(),
-                    },
-                ],
+                namespace: vec![Identifier {
+                    span: test_span(1, 4),
+                    name: "foo".to_string(),
+                }],
                 ident: Identifier {
                     span: test_span(6, 9),
                     name: "Bar".to_string(),
@@ -249,4 +247,233 @@ fn literal_list_multiple_elem() {
             span: test_span(1, 11),
         }),
     );
+}
+
+#[test]
+fn term_simple() {
+    check_output_expr(
+        "a + b",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(1, 2),
+                            name: "a".to_string(),
+                        },
+                    }),
+                    span: test_span(1, 2),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(5, 6),
+                            name: "b".to_string(),
+                        },
+                    }),
+                    span: test_span(5, 6),
+                }),
+            },
+            span: test_span(1, 6),
+        }),
+    );
+}
+
+#[test]
+fn term_repeating() {
+    check_output_expr(
+        "a + b - c + d",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(Expr {
+                    kind: ExprKind::Binary {
+                        op: BinaryOp::Sub,
+                        left: Box::new(Expr {
+                            kind: ExprKind::Binary {
+                                op: BinaryOp::Add,
+                                left: Box::new(Expr {
+                                    kind: ExprKind::Variable(NamespacedIdentifier {
+                                        namespace: vec![],
+                                        ident: Identifier {
+                                            span: test_span(1, 2),
+                                            name: "a".to_string(),
+                                        },
+                                    }),
+                                    span: test_span(1, 2),
+                                }),
+                                right: Box::new(Expr {
+                                    kind: ExprKind::Variable(NamespacedIdentifier {
+                                        namespace: vec![],
+                                        ident: Identifier {
+                                            span: test_span(5, 6),
+                                            name: "b".to_string(),
+                                        },
+                                    }),
+                                    span: test_span(5, 6),
+                                }),
+                            },
+                            span: test_span(1, 6),
+                        }),
+                        right: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(9, 10),
+                                    name: "c".to_string(),
+                                },
+                            }),
+                            span: test_span(9, 10),
+                        }),
+                    },
+                    span: test_span(1, 10),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(13, 14),
+                            name: "d".to_string(),
+                        },
+                    }),
+                    span: test_span(13, 14),
+                }),
+            },
+            span: test_span(1, 14),
+        }),
+    );
+}
+
+#[test]
+fn factor_simple() {
+    check_output_expr(
+        "a * b",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Mul,
+                left: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(1, 2),
+                            name: "a".to_string(),
+                        },
+                    }),
+                    span: test_span(1, 2),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(5, 6),
+                            name: "b".to_string(),
+                        },
+                    }),
+                    span: test_span(5, 6),
+                }),
+            },
+            span: test_span(1, 6),
+        }),
+    );
+}
+
+#[test]
+fn factor_repeating() {
+    check_output_expr(
+        "a * b / c * d",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Mul,
+                left: Box::new(Expr {
+                    kind: ExprKind::Binary {
+                        op: BinaryOp::Div,
+                        left: Box::new(Expr {
+                            kind: ExprKind::Binary {
+                                op: BinaryOp::Mul,
+                                left: Box::new(Expr {
+                                    kind: ExprKind::Variable(NamespacedIdentifier {
+                                        namespace: vec![],
+                                        ident: Identifier {
+                                            span: test_span(1, 2),
+                                            name: "a".to_string(),
+                                        },
+                                    }),
+                                    span: test_span(1, 2),
+                                }),
+                                right: Box::new(Expr {
+                                    kind: ExprKind::Variable(NamespacedIdentifier {
+                                        namespace: vec![],
+                                        ident: Identifier {
+                                            span: test_span(5, 6),
+                                            name: "b".to_string(),
+                                        },
+                                    }),
+                                    span: test_span(5, 6),
+                                }),
+                            },
+                            span: test_span(1, 6),
+                        }),
+                        right: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(9, 10),
+                                    name: "c".to_string(),
+                                },
+                            }),
+                            span: test_span(9, 10),
+                        }),
+                    },
+                    span: test_span(1, 10),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(13, 14),
+                            name: "d".to_string(),
+                        },
+                    }),
+                    span: test_span(13, 14),
+                }),
+            },
+            span: test_span(1, 14),
+        }),
+    );
+}
+
+#[test]
+fn is() {
+    check_output_expr(
+        "a is Foo",
+        Some(Expr {
+            kind: ExprKind::TypeBinary {
+                expr: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(1, 2),
+                            name: "a".to_string(),
+                        },
+                    }),
+                    span: test_span(1, 2),
+                }),
+                ty: TypeReference {
+                    kind: TypeReferenceKind::Named(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(6, 9),
+                            name: "Foo".to_string(),
+                        },
+                    }),
+                    span: Some(test_span(6, 9)),
+                },
+                op: TypeBinaryOp::Is,
+            },
+            span: test_span(1, 9),
+        }),
+    )
 }

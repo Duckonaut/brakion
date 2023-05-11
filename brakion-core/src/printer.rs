@@ -381,15 +381,19 @@ impl BrakionTreeVisitor for Printer {
                     BinaryOp::Geq => node.flag(">="),
                     BinaryOp::And => node.flag("and"),
                     BinaryOp::Or => node.flag("or"),
-                    BinaryOp::Is => node.flag("is"),
                 };
 
                 node.field("left", self.visit_expr(left));
                 node.field("right", self.visit_expr(right));
                 node
             }
-            ExprKind::Cast { expr, ty } => {
-                let mut node = PrinterNode::new("cast".to_string());
+            ExprKind::TypeBinary { expr, ty, op } => {
+                let mut node = PrinterNode::new("type-binary".to_string());
+                match op {
+                    TypeBinaryOp::Is => node.flag("is"),
+                    TypeBinaryOp::As => node.flag("as"),
+                };
+
                 node.field("expr", self.visit_expr(expr));
                 node.field("type", self.visit_type_reference(ty));
                 node

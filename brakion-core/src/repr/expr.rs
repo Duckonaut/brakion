@@ -22,8 +22,9 @@ pub enum ExprKind {
         op: BinaryOp,
         right: Box<Expr>,
     },
-    Cast {
+    TypeBinary {
         expr: Box<Expr>,
+        op: TypeBinaryOp,
         ty: TypeReference,
     },
     Variable(NamespacedIdentifier),
@@ -91,7 +92,12 @@ pub enum BinaryOp {
     Gt,
     Leq,
     Geq,
+}
+
+#[derive(Debug, Hash, PartialEq, Clone)]
+pub enum TypeBinaryOp {
     Is,
+    As,
 }
 
 #[derive(Debug, Hash, PartialEq)]

@@ -836,10 +836,25 @@ where
     }
 
     pub(crate) fn parse_is_expr(&mut self) -> ParserResult<Expr> {
-        self.parse_binary_expr(
-            Self::parse_comparison_expr,
-            &[(TokenKind::Is, BinaryOp::Is)],
-        )
+        let mut expr = propagate!(self.parse_comparison_expr());
+        loop {
+            let token = self.token_kind();
+            if *token == (TokenKind::Is) {
+                self.next_token();
+                let ty = propagate!(self.parse_type());
+                expr = Expr {
+                    span: Span::from_spans(expr.span, ty.span.unwrap()),
+                    kind: ExprKind::TypeBinary {
+                        expr: Box::new(expr),
+                        op: TypeBinaryOp::Is,
+                        ty,
+                    },
+                };
+            } else {
+                break;
+            }
+        }
+        ParserResult::Ok(expr)
     }
 
     pub(crate) fn parse_comparison_expr(&mut self) -> ParserResult<Expr> {
@@ -883,8 +898,9 @@ where
                 let ty = propagate!(self.parse_type());
                 expr = Expr {
                     span: Span::from_spans(expr.span, ty.span.unwrap()),
-                    kind: ExprKind::Cast {
+                    kind: ExprKind::TypeBinary {
                         expr: Box::new(expr),
+                        op: TypeBinaryOp::As,
                         ty,
                     },
                 };
