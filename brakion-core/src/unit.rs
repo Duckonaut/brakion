@@ -212,6 +212,7 @@ impl Span {
 
     pub fn from_spans(start: Span, end: Span) -> Self {
         assert_eq!(start.unit, end.unit);
+        assert!(start.start <= end.end);
 
         Self {
             unit: start.unit,
