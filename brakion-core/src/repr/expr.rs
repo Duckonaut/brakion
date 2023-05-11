@@ -18,13 +18,13 @@ pub enum ExprKind {
         expr: Box<Expr>,
     },
     Binary {
-        left: Box<Expr>,
         op: BinaryOp,
+        left: Box<Expr>,
         right: Box<Expr>,
     },
     TypeBinary {
-        expr: Box<Expr>,
         op: TypeBinaryOp,
+        expr: Box<Expr>,
         ty: TypeReference,
     },
     Variable(NamespacedIdentifier),
