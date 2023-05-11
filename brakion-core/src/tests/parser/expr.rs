@@ -250,6 +250,631 @@ fn literal_list_multiple_elem() {
 }
 
 #[test]
+fn or() {
+    check_output_expr(
+        "a or false",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Or,
+                left: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(1, 2),
+                            name: "a".to_string(),
+                        },
+                    }),
+                    span: test_span(1, 2),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Literal(Literal::Bool(false)),
+                    span: test_span(6, 11),
+                }),
+            },
+            span: test_span(1, 11),
+        }),
+    );
+}
+
+#[test]
+fn and() {
+    check_output_expr(
+        "a and true",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::And,
+                left: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(1, 2),
+                            name: "a".to_string(),
+                        },
+                    }),
+                    span: test_span(1, 2),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Literal(Literal::Bool(true)),
+                    span: test_span(7, 11),
+                }),
+            },
+            span: test_span(1, 11),
+        }),
+    );
+}
+
+#[test]
+fn and_or_precedence() {
+    // `and` binds tighter than `or`
+    // `a and b or c or d and (e or f)` is equivalent to
+    // `((a and b) or c) or (d and (e or f))`
+    check_output_expr(
+        "a and b or c or d and (e or f)",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Or,
+                left: Box::new(Expr {
+                    kind: ExprKind::Binary {
+                        op: BinaryOp::Or,
+                        left: Box::new(Expr {
+                            kind: ExprKind::Binary {
+                                op: BinaryOp::And,
+                                left: Box::new(Expr {
+                                    kind: ExprKind::Variable(NamespacedIdentifier {
+                                        namespace: vec![],
+                                        ident: Identifier {
+                                            span: test_span(1, 2),
+                                            name: "a".to_string(),
+                                        },
+                                    }),
+                                    span: test_span(1, 2),
+                                }),
+                                right: Box::new(Expr {
+                                    kind: ExprKind::Variable(NamespacedIdentifier {
+                                        namespace: vec![],
+                                        ident: Identifier {
+                                            span: test_span(7, 8),
+                                            name: "b".to_string(),
+                                        },
+                                    }),
+                                    span: test_span(7, 8),
+                                }),
+                            },
+                            span: test_span(1, 8),
+                        }),
+                        right: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(12, 13),
+                                    name: "c".to_string(),
+                                },
+                            }),
+                            span: test_span(12, 13),
+                        }),
+                    },
+                    span: test_span(1, 13),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Binary {
+                        op: BinaryOp::And,
+                        left: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(17, 18),
+                                    name: "d".to_string(),
+                                },
+                            }),
+                            span: test_span(17, 18),
+                        }),
+                        right: Box::new(Expr {
+                            kind: ExprKind::Binary {
+                                op: BinaryOp::Or,
+                                left: Box::new(Expr {
+                                    kind: ExprKind::Variable(NamespacedIdentifier {
+                                        namespace: vec![],
+                                        ident: Identifier {
+                                            span: test_span(24, 25),
+                                            name: "e".to_string(),
+                                        },
+                                    }),
+                                    span: test_span(24, 25),
+                                }),
+                                right: Box::new(Expr {
+                                    kind: ExprKind::Variable(NamespacedIdentifier {
+                                        namespace: vec![],
+                                        ident: Identifier {
+                                            span: test_span(29, 30),
+                                            name: "f".to_string(),
+                                        },
+                                    }),
+                                    span: test_span(29, 30),
+                                }),
+                            },
+                            span: test_span(23, 31),
+                        }),
+                    },
+                    span: test_span(17, 31),
+                }),
+            },
+            span: test_span(1, 31),
+        }),
+    );
+}
+
+#[test]
+fn equality() {
+    check_output_expr(
+        "a == b",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Eq,
+                left: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(1, 2),
+                            name: "a".to_string(),
+                        },
+                    }),
+                    span: test_span(1, 2),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(6, 7),
+                            name: "b".to_string(),
+                        },
+                    }),
+                    span: test_span(6, 7),
+                }),
+            },
+            span: test_span(1, 7),
+        }),
+    );
+}
+
+#[test]
+fn nequality() {
+    check_output_expr(
+        "a != b",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Neq,
+                left: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(1, 2),
+                            name: "a".to_string(),
+                        },
+                    }),
+                    span: test_span(1, 2),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(6, 7),
+                            name: "b".to_string(),
+                        },
+                    }),
+                    span: test_span(6, 7),
+                }),
+            },
+            span: test_span(1, 7),
+        }),
+    );
+}
+
+#[test]
+fn eq_neq_lack_precedence() {
+    check_output_expr(
+        "a == b != c",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Neq,
+                left: Box::new(Expr {
+                    kind: ExprKind::Binary {
+                        op: BinaryOp::Eq,
+                        left: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(1, 2),
+                                    name: "a".to_string(),
+                                },
+                            }),
+                            span: test_span(1, 2),
+                        }),
+                        right: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(6, 7),
+                                    name: "b".to_string(),
+                                },
+                            }),
+                            span: test_span(6, 7),
+                        }),
+                    },
+                    span: test_span(1, 7),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(11, 12),
+                            name: "c".to_string(),
+                        },
+                    }),
+                    span: test_span(11, 12),
+                }),
+            },
+            span: test_span(1, 12),
+        }),
+    );
+
+    check_output_expr(
+        "a != b == c",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Eq,
+                left: Box::new(Expr {
+                    kind: ExprKind::Binary {
+                        op: BinaryOp::Neq,
+                        left: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(1, 2),
+                                    name: "a".to_string(),
+                                },
+                            }),
+                            span: test_span(1, 2),
+                        }),
+                        right: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(6, 7),
+                                    name: "b".to_string(),
+                                },
+                            }),
+                            span: test_span(6, 7),
+                        }),
+                    },
+                    span: test_span(1, 7),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(11, 12),
+                            name: "c".to_string(),
+                        },
+                    }),
+                    span: test_span(11, 12),
+                }),
+            },
+            span: test_span(1, 12),
+        }),
+    );
+}
+
+#[test]
+fn comparisons() {
+    check_output_expr(
+        "a < b",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Lt,
+                left: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(1, 2),
+                            name: "a".to_string(),
+                        },
+                    }),
+                    span: test_span(1, 2),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(5, 6),
+                            name: "b".to_string(),
+                        },
+                    }),
+                    span: test_span(5, 6),
+                }),
+            },
+            span: test_span(1, 6),
+        }),
+    );
+
+    check_output_expr(
+        "a > b",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Gt,
+                left: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(1, 2),
+                            name: "a".to_string(),
+                        },
+                    }),
+                    span: test_span(1, 2),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(5, 6),
+                            name: "b".to_string(),
+                        },
+                    }),
+                    span: test_span(5, 6),
+                }),
+            },
+            span: test_span(1, 6),
+        }),
+    );
+
+    check_output_expr(
+        "a <= b",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Leq,
+                left: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(1, 2),
+                            name: "a".to_string(),
+                        },
+                    }),
+                    span: test_span(1, 2),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(6, 7),
+                            name: "b".to_string(),
+                        },
+                    }),
+                    span: test_span(6, 7),
+                }),
+            },
+            span: test_span(1, 7),
+        }),
+    );
+
+    check_output_expr(
+        "a >= b",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Geq,
+                left: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(1, 2),
+                            name: "a".to_string(),
+                        },
+                    }),
+                    span: test_span(1, 2),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(6, 7),
+                            name: "b".to_string(),
+                        },
+                    }),
+                    span: test_span(6, 7),
+                }),
+            },
+            span: test_span(1, 7),
+        }),
+    );
+}
+
+#[test]
+fn comparisons_left_to_right() {
+    check_output_expr(
+        "a < b < c",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Lt,
+                left: Box::new(Expr {
+                    kind: ExprKind::Binary {
+                        op: BinaryOp::Lt,
+                        left: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(1, 2),
+                                    name: "a".to_string(),
+                                },
+                            }),
+                            span: test_span(1, 2),
+                        }),
+                        right: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(5, 6),
+                                    name: "b".to_string(),
+                                },
+                            }),
+                            span: test_span(5, 6),
+                        }),
+                    },
+                    span: test_span(1, 6),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(9, 10),
+                            name: "c".to_string(),
+                        },
+                    }),
+                    span: test_span(9, 10),
+                }),
+            },
+            span: test_span(1, 10),
+        }),
+    );
+
+    check_output_expr(
+        "a > b > c",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Gt,
+                left: Box::new(Expr {
+                    kind: ExprKind::Binary {
+                        op: BinaryOp::Gt,
+                        left: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(1, 2),
+                                    name: "a".to_string(),
+                                },
+                            }),
+                            span: test_span(1, 2),
+                        }),
+                        right: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(5, 6),
+                                    name: "b".to_string(),
+                                },
+                            }),
+                            span: test_span(5, 6),
+                        }),
+                    },
+                    span: test_span(1, 6),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(9, 10),
+                            name: "c".to_string(),
+                        },
+                    }),
+                    span: test_span(9, 10),
+                }),
+            },
+            span: test_span(1, 10),
+        }),
+    );
+
+    check_output_expr(
+        "a > b < c",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Lt,
+                left: Box::new(Expr {
+                    kind: ExprKind::Binary {
+                        op: BinaryOp::Gt,
+                        left: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(1, 2),
+                                    name: "a".to_string(),
+                                },
+                            }),
+                            span: test_span(1, 2),
+                        }),
+                        right: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(5, 6),
+                                    name: "b".to_string(),
+                                },
+                            }),
+                            span: test_span(5, 6),
+                        }),
+                    },
+                    span: test_span(1, 6),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(9, 10),
+                            name: "c".to_string(),
+                        },
+                    }),
+                    span: test_span(9, 10),
+                }),
+            },
+            span: test_span(1, 10),
+        }),
+    );
+
+    check_output_expr(
+        "a < b > c",
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Gt,
+                left: Box::new(Expr {
+                    kind: ExprKind::Binary {
+                        op: BinaryOp::Lt,
+                        left: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(1, 2),
+                                    name: "a".to_string(),
+                                },
+                            }),
+                            span: test_span(1, 2),
+                        }),
+                        right: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(5, 6),
+                                    name: "b".to_string(),
+                                },
+                            }),
+                            span: test_span(5, 6),
+                        }),
+                    },
+                    span: test_span(1, 6),
+                }),
+                right: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(9, 10),
+                            name: "c".to_string(),
+                        },
+                    }),
+                    span: test_span(9, 10),
+                }),
+            },
+            span: test_span(1, 10),
+        }),
+    );
+}
+
+#[test]
 fn term_simple() {
     check_output_expr(
         "a + b",
@@ -474,6 +1099,146 @@ fn is() {
                 op: TypeBinaryOp::Is,
             },
             span: test_span(1, 9),
+        }),
+    )
+}
+
+#[test]
+fn is_chain() {
+    check_output_expr(
+        "a is Foo is bool",
+        Some(Expr {
+            kind: ExprKind::TypeBinary {
+                op: TypeBinaryOp::Is,
+                expr: Box::new(Expr {
+                    kind: ExprKind::TypeBinary {
+                        op: TypeBinaryOp::Is,
+                        expr: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(1, 2),
+                                    name: "a".to_string(),
+                                },
+                            }),
+                            span: test_span(1, 2),
+                        }),
+                        ty: TypeReference {
+                            kind: TypeReferenceKind::Named(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(6, 9),
+                                    name: "Foo".to_string(),
+                                },
+                            }),
+                            span: Some(test_span(6, 9)),
+                        },
+                    },
+                    span: test_span(1, 9),
+                }),
+                ty: TypeReference {
+                    kind: TypeReferenceKind::Named(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(13, 17),
+                            name: "bool".to_string(),
+                        },
+                    }),
+                    span: Some(test_span(13, 17)),
+                },
+            },
+            span: test_span(1, 17),
+        }),
+    )
+}
+
+#[test]
+fn as_type() {
+    check_output_expr(
+        "a as Foo",
+        Some(Expr {
+            kind: ExprKind::TypeBinary {
+                op: TypeBinaryOp::As,
+                expr: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(1, 2),
+                            name: "a".to_string(),
+                        },
+                    }),
+                    span: test_span(1, 2),
+                }),
+                ty: TypeReference {
+                    kind: TypeReferenceKind::Named(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(6, 9),
+                            name: "Foo".to_string(),
+                        },
+                    }),
+                    span: Some(test_span(6, 9)),
+                },
+            },
+            span: test_span(1, 9),
+        }),
+    )
+}
+
+#[test]
+fn as_chain() {
+    check_output_expr(
+        "a as Foo | void as bool",
+        Some(Expr {
+            kind: ExprKind::TypeBinary {
+                op: TypeBinaryOp::As,
+                expr: Box::new(Expr {
+                    kind: ExprKind::TypeBinary {
+                        op: TypeBinaryOp::As,
+                        expr: Box::new(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    span: test_span(1, 2),
+                                    name: "a".to_string(),
+                                },
+                            }),
+                            span: test_span(1, 2),
+                        }),
+                        ty: TypeReference {
+                            kind: TypeReferenceKind::Union(vec![
+                                TypeReference {
+                                    kind: TypeReferenceKind::Named(NamespacedIdentifier {
+                                        namespace: vec![],
+                                        ident: Identifier {
+                                            span: test_span(6, 9),
+                                            name: "Foo".to_string(),
+                                        },
+                                    }),
+                                    span: Some(test_span(6, 9)),
+                                },
+                                TypeReference {
+                                    kind: TypeReferenceKind::Void,
+                                    span: Some(test_span(12, 16)),
+                                },
+                            ]),
+                            span: Some(test_span(6, 16)),
+                        },
+                    },
+                    span: test_span(1, 16),
+                }),
+                ty: TypeReference {
+                    kind: TypeReferenceKind::Named(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(20, 24),
+                            name: "bool".to_string(),
+                        },
+                    }),
+                    span: Some(test_span(20, 24)),
+                },
+            },
+            span: test_span(1, 24),
         }),
     )
 }
