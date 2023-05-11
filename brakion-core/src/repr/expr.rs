@@ -77,7 +77,7 @@ pub enum UnaryOp {
     Not,
 }
 
-#[derive(Debug, Hash, PartialEq)]
+#[derive(Debug, Hash, PartialEq, Clone)]
 pub enum BinaryOp {
     Add,
     Sub,

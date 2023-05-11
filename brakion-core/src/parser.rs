@@ -37,54 +37,6 @@ macro_rules! propagate {
     };
 }
 
-/// Boilerprate for a binary-type level of the expression parser
-macro_rules! binary_expr {
-    (
-        $self:ident,
-        $next_level:tt,
-        ($token_kind:expr, $binary_op:expr)
-        $(,($token_kind_tail:expr, $binary_op_tail:expr))* $(,)?
-    ) => {
-        {
-            let mut expr = propagate!($self.$next_level());
-
-            loop {
-                let token = $self.token_kind();
-
-                if *token == $token_kind {
-                    $self.next_token();
-                    let right = propagate!($self.$next_level());
-                    expr = Expr {
-                        span: Span::from_spans(expr.span, right.span),
-                        kind: ExprKind::Binary {
-                            left: Box::new(expr),
-                            op: $binary_op,
-                            right: Box::new(right),
-                        },
-                    };
-                }
-                $(else if *token == $token_kind_tail {
-                    $self.next_token();
-                    let right = propagate!($self.$next_level());
-                    expr = Expr {
-                        span: Span::from_spans(expr.span, right.span),
-                        kind: ExprKind::Binary {
-                            left: Box::new(expr),
-                            op: $binary_op_tail,
-                            right: Box::new(right),
-                        },
-                    };
-                })*
-                else {
-                    break;
-                }
-            }
-
-            ParserResult::Ok(expr)
-        }
-    };
-}
-
 #[derive(Debug)]
 pub struct Parser<'a, P>
 where
@@ -826,53 +778,99 @@ where
         self.parse_logical_or_expr()
     }
 
+    fn parse_binary_expr(
+        &mut self,
+        mut next_level: impl FnMut(&mut Self) -> ParserResult<Expr>,
+        pairs: &[(TokenKind, BinaryOp)],
+    ) -> ParserResult<Expr> {
+        let mut expr = propagate!(next_level(self));
+
+        loop {
+            if self.is_at_end {
+                break;
+            }
+            let token = self.token_kind();
+
+            if pairs.iter().any(|(k, _)| *k == *token) {
+                let op = pairs.iter().find(|(k, _)| *k == *token).unwrap().1.clone();
+                self.next_token();
+                let right = propagate!(next_level(self));
+                expr = Expr {
+                    span: Span::from_spans(expr.span, right.span),
+                    kind: ExprKind::Binary {
+                        left: Box::new(expr),
+                        op,
+                        right: Box::new(right),
+                    },
+                };
+            } else {
+                break;
+            }
+        }
+
+        ParserResult::Ok(expr)
+    }
+
     pub(crate) fn parse_logical_or_expr(&mut self) -> ParserResult<Expr> {
-        binary_expr!(self, parse_logical_and_expr, (TokenKind::Or, BinaryOp::Or))
+        self.parse_binary_expr(
+            Self::parse_logical_and_expr,
+            &[(TokenKind::Or, BinaryOp::Or)],
+        )
     }
 
     pub(crate) fn parse_logical_and_expr(&mut self) -> ParserResult<Expr> {
-        binary_expr!(self, parse_equality_expr, (TokenKind::And, BinaryOp::And))
+        self.parse_binary_expr(
+            Self::parse_equality_expr,
+            &[(TokenKind::And, BinaryOp::And)],
+        )
     }
 
     pub(crate) fn parse_equality_expr(&mut self) -> ParserResult<Expr> {
-        binary_expr!(
-            self,
-            parse_is_expr,
-            (TokenKind::EqualEqual, BinaryOp::Eq),
-            (TokenKind::BangEqual, BinaryOp::Neq)
+        self.parse_binary_expr(
+            Self::parse_is_expr,
+            &[
+                (TokenKind::EqualEqual, BinaryOp::Eq),
+                (TokenKind::BangEqual, BinaryOp::Neq),
+            ],
         )
     }
 
     pub(crate) fn parse_is_expr(&mut self) -> ParserResult<Expr> {
-        binary_expr!(self, parse_comparison_expr, (TokenKind::Is, BinaryOp::Is))
+        self.parse_binary_expr(
+            Self::parse_comparison_expr,
+            &[(TokenKind::Is, BinaryOp::Is)],
+        )
     }
 
     pub(crate) fn parse_comparison_expr(&mut self) -> ParserResult<Expr> {
-        binary_expr!(
-            self,
-            parse_term_expr,
-            (TokenKind::Greater, BinaryOp::Gt),
-            (TokenKind::GreaterEqual, BinaryOp::Geq),
-            (TokenKind::Less, BinaryOp::Lt),
-            (TokenKind::LessEqual, BinaryOp::Leq)
+        self.parse_binary_expr(
+            Self::parse_term_expr,
+            &[
+                (TokenKind::Greater, BinaryOp::Gt),
+                (TokenKind::GreaterEqual, BinaryOp::Geq),
+                (TokenKind::Less, BinaryOp::Lt),
+                (TokenKind::LessEqual, BinaryOp::Leq),
+            ],
         )
     }
 
     pub(crate) fn parse_term_expr(&mut self) -> ParserResult<Expr> {
-        binary_expr!(
-            self,
-            parse_factor_expr,
-            (TokenKind::Plus, BinaryOp::Add),
-            (TokenKind::Minus, BinaryOp::Sub)
+        self.parse_binary_expr(
+            Self::parse_factor_expr,
+            &[
+                (TokenKind::Plus, BinaryOp::Add),
+                (TokenKind::Minus, BinaryOp::Sub),
+            ],
         )
     }
 
     pub(crate) fn parse_factor_expr(&mut self) -> ParserResult<Expr> {
-        binary_expr!(
-            self,
-            parse_as_expr,
-            (TokenKind::Star, BinaryOp::Mul),
-            (TokenKind::Slash, BinaryOp::Div)
+        self.parse_binary_expr(
+            Self::parse_as_expr,
+            &[
+                (TokenKind::Star, BinaryOp::Mul),
+                (TokenKind::Slash, BinaryOp::Div),
+            ],
         )
     }
 
