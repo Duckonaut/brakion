@@ -1083,6 +1083,8 @@ where
                         break;
                     }
                 }
+
+                let closing_paren_span = self.last_token_span().unwrap();
                 let expr_span = expr.span;
 
                 expr = Expr {
@@ -1090,7 +1092,7 @@ where
                         expr: Box::new(expr),
                         args,
                     },
-                    span: Span::from_spans(expr_span, self.last_token_span().unwrap()),
+                    span: Span::from_spans(expr_span, closing_paren_span),
                 };
             } else if self.match_token(TokenKind::LeftBracket) {
                 let index = propagate!(self.parse_expr());
@@ -1100,7 +1102,7 @@ where
                     ParserError::ExpectedToken(TokenKind::RightBracket),
                 ));
 
-                let index_span = index.span;
+                let closing_brace_span = self.last_token_span().unwrap();
                 let expr_span = expr.span;
 
                 expr = Expr {
@@ -1108,7 +1110,7 @@ where
                         expr: Box::new(expr),
                         index: Box::new(index),
                     },
-                    span: Span::from_spans(expr_span, index_span),
+                    span: Span::from_spans(expr_span, closing_brace_span),
                 };
             } else {
                 break;
