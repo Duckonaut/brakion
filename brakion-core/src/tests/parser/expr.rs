@@ -1499,6 +1499,50 @@ fn call_with_args() {
 }
 
 #[test]
+fn call_with_args_trailing_comma() {
+    check_output_expr(
+        "a(b, c,)",
+        Some(Expr {
+            kind: ExprKind::Call {
+                expr: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(1, 2),
+                            name: "a".to_string(),
+                        },
+                    }),
+                    span: test_span(1, 2),
+                }),
+                args: vec![
+                    Expr {
+                        kind: ExprKind::Variable(NamespacedIdentifier {
+                            namespace: vec![],
+                            ident: Identifier {
+                                span: test_span(3, 4),
+                                name: "b".to_string(),
+                            },
+                        }),
+                        span: test_span(3, 4),
+                    },
+                    Expr {
+                        kind: ExprKind::Variable(NamespacedIdentifier {
+                            namespace: vec![],
+                            ident: Identifier {
+                                span: test_span(6, 7),
+                                name: "c".to_string(),
+                            },
+                        }),
+                        span: test_span(6, 7),
+                    },
+                ],
+            },
+            span: test_span(1, 9),
+        }),
+    )
+}
+
+#[test]
 fn indexing() {
     check_output_expr(
         "a[0]",
@@ -1681,6 +1725,73 @@ fn call_field() {
                 },
             },
             span: test_span(1, 6),
+        }),
+    )
+}
+
+#[test]
+fn constructor() {
+    check_output_expr(
+        "Foo -> { a, b: 1 }",
+        Some(Expr {
+            kind: ExprKind::Constructor {
+                ty: NamespacedIdentifier {
+                    namespace: vec![],
+                    ident: Identifier {
+                        span: test_span(1, 4),
+                        name: "Foo".to_string(),
+                    },
+                },
+                fields: vec![
+                    FieldConstructor::Auto(Identifier {
+                        span: test_span(10, 11),
+                        name: "a".to_string(),
+                    }),
+                    FieldConstructor::Named {
+                        name: Identifier {
+                            span: test_span(13, 14),
+                            name: "b".to_string(),
+                        },
+                        value: Expr {
+                            kind: ExprKind::Literal(Literal::Int(1)),
+                            span: test_span(16, 17),
+                        },
+                    },
+                ],
+            },
+            span: test_span(1, 19),
+        }),
+    );
+    
+    check_output_expr(
+        "Foo -> { a, b: 1, }",
+        Some(Expr {
+            kind: ExprKind::Constructor {
+                ty: NamespacedIdentifier {
+                    namespace: vec![],
+                    ident: Identifier {
+                        span: test_span(1, 4),
+                        name: "Foo".to_string(),
+                    },
+                },
+                fields: vec![
+                    FieldConstructor::Auto(Identifier {
+                        span: test_span(10, 11),
+                        name: "a".to_string(),
+                    }),
+                    FieldConstructor::Named {
+                        name: Identifier {
+                            span: test_span(13, 14),
+                            name: "b".to_string(),
+                        },
+                        value: Expr {
+                            kind: ExprKind::Literal(Literal::Int(1)),
+                            span: test_span(16, 17),
+                        },
+                    },
+                ],
+            },
+            span: test_span(1, 20),
         }),
     )
 }
