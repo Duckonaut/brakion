@@ -13,6 +13,7 @@ pub enum ParserError {
     UnterminatedScope,
     ExpectedMatchArm,
     TooManyFunctionParameters,
+    ExpectedBody,
 }
 
 impl ParserError {
@@ -28,6 +29,7 @@ impl ParserError {
             ParserError::UnterminatedScope => true,
             ParserError::ExpectedMatchArm => true,
             ParserError::TooManyFunctionParameters => true,
+            ParserError::ExpectedBody => false,
         }
     }
 }
@@ -53,6 +55,7 @@ impl Display for ParserError {
             ParserError::TooManyFunctionParameters => {
                 write!(f, "Too many function parameters")
             }
+            ParserError::ExpectedBody => write!(f, "Expected body"),
         }
     }
 }

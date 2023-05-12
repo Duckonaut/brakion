@@ -253,7 +253,15 @@ where
 
     fn parse_function(&mut self) -> ParserResult<Function> {
         let signature = propagate!(self.parse_function_signature());
-        let body = propagate!(self.parse_executable_block());
+        let body = match self.parse_executable_block() {
+            ParserResult::Ok(body) => body,
+            ParserResult::None => {
+                return ParserResult::Err(ParserError::ExpectedBody, self.token_span());
+            }
+            ParserResult::Err(err, span) => {
+                return ParserResult::Err(err, span);
+            }
+        };
 
         ParserResult::Ok(Function { signature, body })
     }
@@ -1253,6 +1261,9 @@ where
     }
 
     fn token_span(&self) -> Option<Span> {
+        if self.is_at_end {
+            return self.last_span;
+        }
         self.token.as_ref().unwrap().span
     }
 
