@@ -333,3 +333,38 @@ fn if_else_chain() {
         }),
     );
 }
+
+#[test]
+fn while_stmt() {
+    check_output_stmt(
+        "while true a();",
+        Some(Stmt {
+            kind: StmtKind::While {
+                condition: Expr {
+                    kind: ExprKind::Literal(Literal::Bool(true)),
+                    span: test_span(7, 11),
+                },
+                body: Box::new(Stmt {
+                    kind: StmtKind::Expr(Expr {
+                        kind: ExprKind::Call {
+                            expr: Box::new(Expr {
+                                kind: ExprKind::Variable(NamespacedIdentifier {
+                                    namespace: vec![],
+                                    ident: Identifier {
+                                        name: "a".to_string(),
+                                        span: test_span(12, 13),
+                                    },
+                                }),
+                                span: test_span(12, 13),
+                            }),
+                            args: vec![],
+                        },
+                        span: test_span(12, 15),
+                    }),
+                    span: test_span(12, 16),
+                }),
+            },
+            span: test_span(1, 16),
+        }),
+    );
+}
