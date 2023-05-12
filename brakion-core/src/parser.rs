@@ -709,7 +709,7 @@ where
             return ParserResult::None;
         }
 
-        let return_span = self.token_span().unwrap();
+        let return_span = self.last_token_span().unwrap();
 
         if !self.match_token(TokenKind::Semicolon) {
             let expr = propagate!(self.parse_expr());

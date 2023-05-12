@@ -3,8 +3,10 @@ use std::io::Cursor;
 use crate::filters::ParserTokenFilter;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
-use crate::unit::{Location, Span, Unit};
+use crate::unit::Unit;
 use crate::{repr::*, Config, ErrorModule};
+
+use super::test_span;
 
 fn check_output_expr(source: &str, expected: Option<Expr>) {
     let errors = ErrorModule::new_ref();
@@ -45,10 +47,6 @@ fn check_output_expr(source: &str, expected: Option<Expr>) {
         errors.lock().unwrap().dump(&mut units);
         panic!("Errors encountered during parsing");
     }
-}
-
-fn test_span(start: usize, end: usize) -> Span {
-    Span::new(0, Location::new(1, 0, start), Location::new(1, 0, end))
 }
 
 #[test]
@@ -1762,7 +1760,7 @@ fn constructor() {
             span: test_span(1, 19),
         }),
     );
-    
+
     check_output_expr(
         "Foo -> { a, b: 1, }",
         Some(Expr {
