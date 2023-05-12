@@ -917,34 +917,37 @@ where
     }
 
     fn parse_unary_expr(&mut self) -> ParserResult<Expr> {
-        let mut ops = vec![];
+        let mut ops_spans = vec![];
 
         if self.is_at_end {
-            return self.parse_primary_expr();
+            return ParserResult::None;
         }
 
-        let start_span = self.token_span().unwrap();
+        let mut start_span = self.token_span().unwrap();
 
         loop {
-            if self.match_token(TokenKind::Bang) {
-                ops.push(UnaryOp::Not);
+            let op = if self.match_token(TokenKind::Bang) {
+                UnaryOp::Not
             } else if self.match_token(TokenKind::Minus) {
-                ops.push(UnaryOp::Neg);
+                UnaryOp::Neg
             } else {
                 break;
-            }
+            };
+
+            ops_spans.push((op, start_span));
+            start_span = self.token_span().unwrap();
         }
 
         let mut expr = propagate!(self.parse_primary_expr());
 
-        for op in ops.into_iter().rev() {
+        for (op, s) in ops_spans.into_iter().rev() {
             let expr_span = expr.span;
             expr = Expr {
                 kind: ExprKind::Unary {
                     op,
                     expr: Box::new(expr),
                 },
-                span: Span::from_spans(start_span, expr_span),
+                span: Span::from_spans(s, expr_span),
             };
         }
 

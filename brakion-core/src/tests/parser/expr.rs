@@ -1242,3 +1242,75 @@ fn as_chain() {
         }),
     )
 }
+
+#[test]
+fn unary() {
+    check_output_expr(
+        "!a",
+        Some(Expr {
+            kind: ExprKind::Unary {
+                op: UnaryOp::Not,
+                expr: Box::new(Expr {
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            span: test_span(2, 3),
+                            name: "a".to_string(),
+                        },
+                    }),
+                    span: test_span(2, 3),
+                }),
+            },
+            span: test_span(1, 3),
+        }),
+    )
+}
+
+#[test]
+fn unary_chain() {
+    check_output_expr(
+        "-!-!!a",
+        Some(Expr {
+            kind: ExprKind::Unary {
+                op: UnaryOp::Neg,
+                expr: Box::new(Expr {
+                    kind: ExprKind::Unary {
+                        op: UnaryOp::Not,
+                        expr: Box::new(Expr {
+                            kind: ExprKind::Unary {
+                                op: UnaryOp::Neg,
+                                expr: Box::new(Expr {
+                                    kind: ExprKind::Unary {
+                                        op: UnaryOp::Not,
+                                        expr: Box::new(Expr {
+                                            kind: ExprKind::Unary {
+                                                op: UnaryOp::Not,
+                                                expr: Box::new(Expr {
+                                                    kind: ExprKind::Variable(
+                                                        NamespacedIdentifier {
+                                                            namespace: vec![],
+                                                            ident: Identifier {
+                                                                span: test_span(6, 7),
+                                                                name: "a".to_string(),
+                                                            },
+                                                        },
+                                                    ),
+                                                    span: test_span(6, 7),
+                                                }),
+                                            },
+                                            span: test_span(5, 7),
+                                        }),
+                                    },
+                                    span: test_span(4, 7),
+                                }),
+                            },
+                            span: test_span(3, 7),
+                        }),
+                    },
+                    span: test_span(2, 7),
+                }),
+            },
+            span: test_span(1, 7),
+        }),
+    )
+}
