@@ -143,26 +143,29 @@ where
     }
 
     pub(crate) fn parse_decl(&mut self) -> ParserResult<Decl> {
-        // impl is special, does not have a visibility
-        let imp = self.parse_impl_decl();
-
-        if let ParserResult::Ok(imp) = imp {
-            return ParserResult::Ok(Decl {
-                visibility: Visibility::Private,
-                kind: imp,
-            });
-        } else if let ParserResult::Err(err, span) = imp {
-            return ParserResult::Err(err, span);
-        }
-
         let visibility = propagate!(self.parse_visibility());
 
+        let visibility_span = self.last_token_span(); // Not necessarily the visibility span since
+                                                      // the visibility could be implicit. Only
+                                                      // used in the case of `pub impl` though, so
+                                                      // it's fine.
+
         let kind = propagate!(alternatives!(
+            self.parse_impl_decl(),
             self.parse_module_decl(),
             self.parse_function_decl(),
             self.parse_type_decl(),
             self.parse_trait_decl(),
         ));
+
+        if let DeclKind::Impl { .. } = kind {
+            if visibility == Visibility::Public {
+                self.errors
+                    .lock()
+                    .unwrap()
+                    .add_parser_error(ParserError::PubInTraitImpl, visibility_span);
+            }
+        }
 
         ParserResult::Ok(Decl { visibility, kind })
     }

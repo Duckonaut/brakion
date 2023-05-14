@@ -9,11 +9,11 @@ pub enum ParserError {
     ExpectedIdentifier,
     ExpectedFunction,
     ExpectedType,
+    ExpectedBody,
     PubInTraitImpl,
     UnterminatedScope,
     ExpectedMatchArm,
     TooManyFunctionParameters,
-    ExpectedBody,
     VariantMethodInterweave,
 }
 

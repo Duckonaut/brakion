@@ -918,3 +918,104 @@ fn mod_with_decl_pub() {
         }],
     );
 }
+
+#[test]
+fn trait_empty() {
+    check_output_tree(
+        "trait Foo { }",
+        &[Decl {
+            visibility: Visibility::Private,
+            kind: DeclKind::Trait {
+                name: Identifier {
+                    name: "Foo".to_string(),
+                    span: test_span(7, 10),
+                },
+                body: TraitBody { methods: vec![] },
+            },
+        }],
+    );
+}
+
+#[test]
+fn trait_methods() {
+    check_output_tree(
+        "trait Foo { fn bar(); fn baz(); }",
+        &[Decl {
+            visibility: Visibility::Private,
+            kind: DeclKind::Trait {
+                name: Identifier {
+                    name: "Foo".to_string(),
+                    span: test_span(7, 10),
+                },
+                body: TraitBody {
+                    methods: vec![
+                        FunctionSignature {
+                            name: Identifier {
+                                name: "bar".to_string(),
+                                span: test_span(16, 19),
+                            },
+                            takes_self: false,
+                            self_precondition: None,
+                            parameters: vec![],
+                            return_type: TypeReference {
+                                kind: TypeReferenceKind::Void,
+                                span: None,
+                            },
+                        },
+                        FunctionSignature {
+                            name: Identifier {
+                                name: "baz".to_string(),
+                                span: test_span(26, 29),
+                            },
+                            takes_self: false,
+                            self_precondition: None,
+                            parameters: vec![],
+                            return_type: TypeReference {
+                                kind: TypeReferenceKind::Void,
+                                span: None,
+                            },
+                        },
+                    ],
+                },
+            },
+        }],
+    );
+}
+
+#[test]
+fn impl_empty() {
+    check_output_tree(
+        "impl Foo for Bar { }",
+        &[Decl {
+            visibility: Visibility::Private,
+            kind: DeclKind::Impl {
+                type_name: TypeReference {
+                    kind: TypeReferenceKind::Named(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            name: "Bar".to_string(),
+                            span: test_span(14, 17),
+                        },
+                    }),
+                    span: Some(test_span(14, 17)),
+                },
+                trait_name: NamespacedIdentifier {
+                    namespace: vec![],
+                    ident: Identifier {
+                        name: "Foo".to_string(),
+                        span: test_span(6, 9),
+                    },
+                },
+                body: vec![],
+            },
+        }],
+    );
+}
+
+#[test]
+fn impl_empty_pub() {
+    check_output_errors(
+        "pub impl Foo for Bar { }",
+        &[(ParserError::PubInTraitImpl, Some(test_span(1, 4)))],
+    );
+}
