@@ -81,6 +81,11 @@ fn empty() {
 }
 
 #[test]
+fn nothing_valid() {
+    check_output_errors(";", &[(ParserError::ExpectedDecl, Some(test_span(1, 2)))]);
+}
+
+#[test]
 fn function_signature_basic() {
     check_output_tree(
         "fn main() { }",
@@ -987,7 +992,7 @@ fn impl_empty() {
     check_output_tree(
         "impl Foo for Bar { }",
         &[Decl {
-            visibility: Visibility::Private,
+            visibility: Visibility::Public,
             kind: DeclKind::Impl {
                 type_name: TypeReference {
                     kind: TypeReferenceKind::Named(NamespacedIdentifier {
@@ -1017,5 +1022,52 @@ fn impl_empty_pub() {
     check_output_errors(
         "pub impl Foo for Bar { }",
         &[(ParserError::PubInTraitImpl, Some(test_span(1, 4)))],
+    );
+}
+
+#[test]
+fn impl_full() {
+    check_output_tree(
+        "impl Foo for Bar { fn baz() { } }",
+        &[Decl {
+            visibility: Visibility::Public,
+            kind: DeclKind::Impl {
+                type_name: TypeReference {
+                    kind: TypeReferenceKind::Named(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
+                            name: "Bar".to_string(),
+                            span: test_span(14, 17),
+                        },
+                    }),
+                    span: Some(test_span(14, 17)),
+                },
+                trait_name: NamespacedIdentifier {
+                    namespace: vec![],
+                    ident: Identifier {
+                        name: "Foo".to_string(),
+                        span: test_span(6, 9),
+                    },
+                },
+                body: vec![
+                    Function {
+                        signature: FunctionSignature {
+                            name: Identifier {
+                                name: "baz".to_string(),
+                                span: test_span(23, 26),
+                            },
+                            takes_self: false,
+                            self_precondition: None,
+                            parameters: vec![],
+                            return_type: TypeReference {
+                                kind: TypeReferenceKind::Void,
+                                span: None,
+                            },
+                        },
+                        body: vec![],
+                    }
+                ],
+            },
+        }],
     );
 }

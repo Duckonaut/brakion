@@ -165,9 +165,13 @@ where
                     .unwrap()
                     .add_parser_error(ParserError::PubInTraitImpl, visibility_span);
             }
+            ParserResult::Ok(Decl {
+                visibility: Visibility::Public,
+                kind,
+            })
+        } else {
+            ParserResult::Ok(Decl { visibility, kind })
         }
-
-        ParserResult::Ok(Decl { visibility, kind })
     }
 
     pub(crate) fn parse_visibility(&mut self) -> ParserResult<Visibility> {
