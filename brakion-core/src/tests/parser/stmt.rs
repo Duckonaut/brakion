@@ -490,3 +490,148 @@ fn match_stmt_with_var() {
         }),
     );
 }
+
+#[test]
+fn match_stmt_with_var_type() {
+    check_output_stmt(
+        "match a { on Foo false; on Bar true; }",
+        Some(Stmt {
+            kind: StmtKind::Match {
+                expr: Some(Identifier {
+                    name: "a".to_string(),
+                    span: test_span(7, 8),
+                }),
+                arms: vec![
+                    MatchArm {
+                        pattern: MatchPattern::Expr(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    name: "Foo".to_string(),
+                                    span: test_span(14, 17),
+                                },
+                            }),
+                            span: test_span(14, 17),
+                        }),
+                        body: Box::new(Stmt {
+                            kind: StmtKind::Expr(Expr {
+                                kind: ExprKind::Literal(Literal::Bool(false)),
+                                span: test_span(18, 23),
+                            }),
+                            span: test_span(18, 24),
+                        }),
+                    },
+                    MatchArm {
+                        pattern: MatchPattern::Expr(Expr {
+                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    name: "Bar".to_string(),
+                                    span: test_span(28, 31),
+                                },
+                            }),
+                            span: test_span(28, 31),
+                        }),
+                        body: Box::new(Stmt {
+                            kind: StmtKind::Expr(Expr {
+                                kind: ExprKind::Literal(Literal::Bool(true)),
+                                span: test_span(32, 36),
+                            }),
+                            span: test_span(32, 37),
+                        }),
+                    },
+                ],
+            },
+            span: test_span(1, 39),
+        }),
+    );
+}
+
+#[test]
+fn match_ctor() {
+    check_output_stmt(
+        "match a { on Foo -> { value: 1 } { hi(); } else { bye(); } }",
+        Some(Stmt {
+            kind: StmtKind::Match {
+                expr: Some(Identifier {
+                    name: "a".to_string(),
+                    span: test_span(7, 8),
+                }),
+                arms: vec![
+                    MatchArm {
+                        pattern: MatchPattern::Expr(Expr {
+                            kind: ExprKind::Constructor {
+                                ty: NamespacedIdentifier {
+                                    namespace: vec![],
+                                    ident: Identifier {
+                                        name: "Foo".to_string(),
+                                        span: test_span(14, 17),
+                                    },
+                                },
+                                fields: vec![FieldConstructor::Named {
+                                    name: Identifier {
+                                        name: "value".to_string(),
+                                        span: test_span(23, 28),
+                                    },
+                                    value: Expr {
+                                        kind: ExprKind::Literal(Literal::Int(1)),
+                                        span: test_span(30, 31),
+                                    },
+                                }],
+                            },
+                            span: test_span(14, 33),
+                        }),
+                        body: Box::new(Stmt {
+                            kind: StmtKind::Block(vec![Stmt {
+                                kind: StmtKind::Expr(Expr {
+                                    kind: ExprKind::Call {
+                                        expr: Box::new(Expr {
+                                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                                namespace: vec![],
+                                                ident: Identifier {
+                                                    name: "hi".to_string(),
+                                                    span: test_span(36, 38),
+                                                },
+                                            }),
+                                            span: test_span(36, 38),
+                                        }),
+                                        args: vec![],
+                                    },
+                                    span: test_span(36, 40),
+                                }),
+                                span: test_span(36, 41),
+                            }]),
+                            span: test_span(34, 43),
+                        }),
+                    },
+                    MatchArm {
+                        pattern: MatchPattern::Wildcard,
+                        body: Box::new(Stmt {
+                            kind: StmtKind::Block(vec![Stmt {
+                                kind: StmtKind::Expr(Expr {
+                                    kind: ExprKind::Call {
+                                        expr: Box::new(Expr {
+                                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                                namespace: vec![],
+                                                ident: Identifier {
+                                                    name: "bye".to_string(),
+                                                    span: test_span(51, 54),
+                                                },
+                                            }),
+                                            span: test_span(51, 54),
+                                        }),
+                                        args: vec![],
+                                    },
+                                    span: test_span(51, 56),
+                                }),
+                                span: test_span(51, 57),
+                            }]),
+                            span: test_span(49, 59),
+                        }),
+                    },
+                ],
+            },
+            span: test_span(1, 61),
+        }),
+    );
+}
