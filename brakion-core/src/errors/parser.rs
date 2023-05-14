@@ -14,6 +14,7 @@ pub enum ParserError {
     ExpectedMatchArm,
     TooManyFunctionParameters,
     ExpectedBody,
+    VariantMethodInterweave,
 }
 
 impl ParserError {
@@ -30,6 +31,7 @@ impl ParserError {
             ParserError::ExpectedMatchArm => true,
             ParserError::TooManyFunctionParameters => true,
             ParserError::ExpectedBody => false,
+            ParserError::VariantMethodInterweave => false,
         }
     }
 }
@@ -56,6 +58,9 @@ impl Display for ParserError {
                 write!(f, "Too many function parameters")
             }
             ParserError::ExpectedBody => write!(f, "Expected body"),
+            ParserError::VariantMethodInterweave => {
+                write!(f, "Type methods must be declared after all the variants")
+            }
         }
     }
 }

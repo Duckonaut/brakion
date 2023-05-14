@@ -301,6 +301,16 @@ where
             if self.token_kind() == &TokenKind::Pub || self.token_kind() == &TokenKind::Fn {
                 break;
             } else if self.match_token(TokenKind::RightBrace) {
+                if variants.is_empty() {
+                    variants.push(TypeVariant {
+                        name: Identifier {
+                            span: name_span,
+                            name: "self".to_string(),
+                        },
+                        fields: Vec::new(),
+                    });
+                }
+
                 return ParserResult::Ok(DeclKind::Type {
                     name,
                     body: TypeBody {
@@ -356,9 +366,22 @@ where
             }
         }
 
+        if variants.is_empty() {
+            variants.push(TypeVariant {
+                name: Identifier {
+                    span: name_span,
+                    name: "self".to_string(),
+                },
+                fields: Vec::new(),
+            });
+        }
+
         let mut methods = Vec::new();
 
         while !self.match_token(TokenKind::RightBrace) && !self.is_at_end {
+            if let TokenKind::Identifier(_) = self.token_kind() {
+                return ParserResult::Err(ParserError::VariantMethodInterweave, self.token_span());
+            }
             let visibility = propagate!(self.parse_visibility());
             let f = propagate!(self.parse_function());
             methods.push((visibility, f));
