@@ -161,6 +161,7 @@ impl BrakionTreeVisitor for Printer {
 
                 for variant in body.variants.iter_mut() {
                     let mut variant_node = PrinterNode::new("variant".to_string());
+                    variant_node.descriptor("name", &variant.name.name);
                     for field in variant.fields.iter_mut() {
                         let mut field_node = PrinterNode::new("field".to_string());
                         field_node.descriptor("name", &field.name.name);
