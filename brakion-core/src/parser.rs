@@ -112,7 +112,14 @@ where
                     );
 
                     if !fatal {
-                        self.synchronize();
+                        self.synchronize(&[
+                            TokenKind::Pub,
+                            TokenKind::Impl,
+                            TokenKind::Mod,
+                            TokenKind::Fn,
+                            TokenKind::Type,
+                            TokenKind::Trait,
+                        ]);
                     } else {
                         break;
                     }
@@ -124,18 +131,12 @@ where
     }
 
     // Consumes tokens until a new "starting" token is found
-    fn synchronize(&mut self) {
+    fn synchronize(&mut self, stoppers: &[TokenKind]) {
         self.next_token();
 
         while !self.is_at_end {
-            match self.token_kind() {
-                TokenKind::Pub
-                | TokenKind::Mod
-                | TokenKind::Fn
-                | TokenKind::Type
-                | TokenKind::Trait
-                | TokenKind::Impl => return,
-                _ => (),
+            if stoppers.contains(self.token_kind()) {
+                return;
             }
 
             self.next_token();
@@ -262,7 +263,16 @@ where
                         .lock()
                         .unwrap()
                         .add_parser_error(ParserError::ExpectedDecl, self.token_span());
-                    continue;
+
+                    self.synchronize(&[
+                        TokenKind::Pub,
+                        TokenKind::Impl,
+                        TokenKind::Mod,
+                        TokenKind::Fn,
+                        TokenKind::Type,
+                        TokenKind::Trait,
+                        TokenKind::RightBrace,
+                    ]);
                 }
                 ParserResult::Err(err, span) => {
                     let fatal = err.is_fatal();
@@ -275,7 +285,15 @@ where
                                 None => self.token_span(),
                             },
                         );
-                        self.synchronize();
+                        self.synchronize(&[
+                            TokenKind::Pub,
+                            TokenKind::Impl,
+                            TokenKind::Mod,
+                            TokenKind::Fn,
+                            TokenKind::Type,
+                            TokenKind::Trait,
+                            TokenKind::RightBrace,
+                        ]);
                     } else {
                         return ParserResult::Err(err, span);
                     }

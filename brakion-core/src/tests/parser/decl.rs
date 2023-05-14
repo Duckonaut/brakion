@@ -925,6 +925,11 @@ fn mod_with_decl_pub() {
 }
 
 #[test]
+fn mod_with_bad_decl() {
+    check_output_errors("mod a { ; }", &[(ParserError::ExpectedDecl, Some(test_span(9, 10)))]);
+}
+
+#[test]
 fn trait_empty() {
     check_output_tree(
         "trait Foo { }",
