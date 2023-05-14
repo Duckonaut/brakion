@@ -235,14 +235,48 @@ where
             ParserError::ExpectedToken(TokenKind::LeftBrace),
         ));
 
+        let brace_span = self.last_token_span();
+
         let mut body = Vec::new();
 
-        while !self.match_token(TokenKind::RightBrace) {
-            let decl = propagate!(self.parse_decl());
-            body.push(decl);
+        while !self.is_at_end {
+            if self.match_token(TokenKind::RightBrace) {
+                return ParserResult::Ok(DeclKind::Module { name, body });
+            }
+
+            let result = self.parse_decl();
+
+            match result {
+                ParserResult::Ok(decl) => {
+                    body.push(decl);
+                }
+                ParserResult::None => {
+                    self.errors
+                        .lock()
+                        .unwrap()
+                        .add_parser_error(ParserError::ExpectedDecl, self.token_span());
+                    continue;
+                }
+                ParserResult::Err(err, span) => {
+                    let fatal = err.is_fatal();
+
+                    if !fatal {
+                        self.errors.lock().unwrap().add_parser_error(
+                            err,
+                            match span {
+                                Some(span) => Some(span),
+                                None => self.token_span(),
+                            },
+                        );
+                        self.synchronize();
+                    } else {
+                        return ParserResult::Err(err, span);
+                    }
+                }
+            }
         }
 
-        ParserResult::Ok(DeclKind::Module { name, body })
+        ParserResult::Err(ParserError::UnterminatedScope, brace_span)
     }
 
     fn parse_function_decl(&mut self) -> ParserResult<DeclKind> {
@@ -532,12 +566,9 @@ where
 
         let mut stmts = Vec::new();
 
-        loop {
+        while !self.is_at_end {
             if self.match_token(TokenKind::RightBrace) {
-                break;
-            }
-            if self.is_at_end {
-                return ParserResult::Err(ParserError::UnterminatedScope, opening_brace_span);
+                return ParserResult::Ok(stmts);
             }
 
             let stmt = propagate!(self.parse_stmt());
@@ -545,14 +576,14 @@ where
             stmts.push(stmt);
         }
 
-        ParserResult::Ok(stmts)
+        ParserResult::Err(ParserError::UnterminatedScope, opening_brace_span)
     }
 
     pub(crate) fn parse_stmt(&mut self) -> ParserResult<Stmt> {
         let start_span = self.token_span();
 
         let stmt_kind = propagate!(alternatives!(
-            self.parse_block_stmt(),
+            self.parse_block_stmt(), // first all the statements that start with a keyword
             self.parse_variable_stmt(),
             self.parse_if_stmt(),
             self.parse_while_stmt(),
