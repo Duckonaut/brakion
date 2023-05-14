@@ -797,6 +797,124 @@ fn type_variants_method() {
 fn type_variants_methods_interweave() {
     check_output_errors(
         "type Foo { Bar; fn foo() { } Baz; }",
-        &[(ParserError::VariantMethodInterweave, Some(test_span(30, 33)))],
+        &[(
+            ParserError::VariantMethodInterweave,
+            Some(test_span(30, 33)),
+        )],
+    );
+}
+
+#[test]
+fn type_variants_methods_interweave_2() {
+    check_output_errors(
+        "type Foo { fn foo() { } Bar; Baz; }",
+        &[(
+            ParserError::VariantMethodInterweave,
+            Some(test_span(25, 28)),
+        )],
+    );
+}
+
+#[test]
+fn mod_empty() {
+    check_output_tree(
+        "mod foo { }",
+        &[Decl {
+            visibility: Visibility::Private,
+            kind: DeclKind::Module {
+                name: Identifier {
+                    name: "foo".to_string(),
+                    span: test_span(5, 8),
+                },
+                body: vec![],
+            },
+        }],
+    );
+}
+
+#[test]
+fn mod_empty_pub() {
+    check_output_tree(
+        "pub mod foo { }",
+        &[Decl {
+            visibility: Visibility::Public,
+            kind: DeclKind::Module {
+                name: Identifier {
+                    name: "foo".to_string(),
+                    span: test_span(9, 12),
+                },
+                body: vec![],
+            },
+        }],
+    );
+}
+
+#[test]
+fn mod_with_decl() {
+    check_output_tree(
+        "mod foo { fn bar() { } }",
+        &[Decl {
+            visibility: Visibility::Private,
+            kind: DeclKind::Module {
+                name: Identifier {
+                    name: "foo".to_string(),
+                    span: test_span(5, 8),
+                },
+                body: vec![Decl {
+                    visibility: Visibility::Private,
+                    kind: DeclKind::Function(Function {
+                        signature: FunctionSignature {
+                            name: Identifier {
+                                name: "bar".to_string(),
+                                span: test_span(14, 17),
+                            },
+                            takes_self: false,
+                            self_precondition: None,
+                            parameters: vec![],
+                            return_type: TypeReference {
+                                kind: TypeReferenceKind::Void,
+                                span: None,
+                            },
+                        },
+                        body: vec![],
+                    }),
+                }],
+            },
+        }],
+    );
+}
+
+#[test]
+fn mod_with_decl_pub() {
+    check_output_tree(
+        "mod foo { pub fn bar() { } }",
+        &[Decl {
+            visibility: Visibility::Private,
+            kind: DeclKind::Module {
+                name: Identifier {
+                    name: "foo".to_string(),
+                    span: test_span(5, 8),
+                },
+                body: vec![Decl {
+                    visibility: Visibility::Public,
+                    kind: DeclKind::Function(Function {
+                        signature: FunctionSignature {
+                            name: Identifier {
+                                name: "bar".to_string(),
+                                span: test_span(18, 21),
+                            },
+                            takes_self: false,
+                            self_precondition: None,
+                            parameters: vec![],
+                            return_type: TypeReference {
+                                kind: TypeReferenceKind::Void,
+                                span: None,
+                            },
+                        },
+                        body: vec![],
+                    }),
+                }],
+            },
+        }],
     );
 }
