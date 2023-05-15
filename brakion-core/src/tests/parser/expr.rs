@@ -9,7 +9,7 @@ use crate::{repr::*, Config, ErrorModule};
 use super::test_span;
 
 fn check_output_expr(source: &str, expected: Option<Expr>) {
-    let errors = ErrorModule::new_ref();
+    let errors = ErrorModule::new();
     let config = Config::default();
 
     let unit = Unit::new(
@@ -27,24 +27,16 @@ fn check_output_expr(source: &str, expected: Option<Expr>) {
     let output = parser.parse_expr();
 
     match output {
-        crate::parser::ParserResult::Ok(expr) => {
-            if expected.is_none() {
-                panic!("Expected no expression, got {:?}", expr);
-            }
-            assert_eq!(expr, expected.unwrap());
+        Ok(expr) => {
+            assert_eq!(expr, expected);
         }
-        crate::parser::ParserResult::None => {
-            if expected.is_some() {
-                panic!("Expected an expression, got None");
-            }
-        }
-        crate::parser::ParserResult::Err(err, _) => {
+        Err((err, _)) => {
             panic!("Expected an expression, got error: {:?}", err);
         }
     }
 
-    if !errors.lock().unwrap().errors.is_empty() {
-        errors.lock().unwrap().dump(&mut units);
+    if !errors.is_empty() {
+        errors.dump(&mut units);
         panic!("Errors encountered during parsing");
     }
 }

@@ -126,37 +126,40 @@ impl BrakionTreeVisitor for Printer {
     type TypeReferenceResult = PrinterNode;
 
     fn visit_decl(&mut self, decl: &mut Decl) -> Self::DeclResult {
-        let mut node = PrinterNode::new("decl".to_string());
-
-        if let Visibility::Public = decl.visibility {
-            node.flag("pub");
-        }
-
-        match &mut decl.kind {
-            DeclKind::Module { name, body } => {
+        match decl {
+            Decl::Module { visibility, name, body } => {
                 let mut module_node = PrinterNode::new("module".to_string());
+                if visibility.is_public() {
+                    module_node.flag("pub");
+                }
                 module_node.descriptor("name", &name.name);
                 for decl in body.iter_mut() {
                     module_node.field("member", self.visit_decl(decl));
                 }
 
-                node.node(module_node);
+                module_node
             }
-            DeclKind::Function(f) => {
+            Decl::Function { visibility, function } => {
                 let mut f_node = PrinterNode::new("fn".to_string());
-                f_node.node(self.print_function_signature(&mut f.signature));
+                if visibility.is_public() {
+                    f_node.flag("pub");
+                }
+                f_node.node(self.print_function_signature(&mut function.signature));
 
                 let mut body_node = PrinterNode::new("body".to_string());
-                for stmt in f.body.iter_mut() {
+                for stmt in function.body.iter_mut() {
                     body_node.field("stmt", self.visit_stmt(stmt));
                 }
 
                 f_node.node(body_node);
 
-                node.node(f_node);
+                f_node
             }
-            DeclKind::Type { name, body } => {
+            Decl::Type { visibility, name, body } => {
                 let mut type_node = PrinterNode::new("type".to_string());
+                if visibility.is_public() {
+                    type_node.flag("pub");
+                }
                 type_node.descriptor("name", &name.name);
 
                 for variant in body.variants.iter_mut() {
@@ -185,19 +188,22 @@ impl BrakionTreeVisitor for Printer {
                     method_node.node(body_node);
                 }
 
-                node.node(type_node);
+                type_node
             }
-            DeclKind::Trait { name, body } => {
+            Decl::Trait { visibility, name, body } => {
                 let mut trait_node = PrinterNode::new("trait".to_string());
+                if visibility.is_public() {
+                    trait_node.flag("pub");
+                }
                 trait_node.descriptor("name", &name.name);
 
                 for method in body.methods.iter_mut() {
                     trait_node.field("method", self.print_function_signature(method));
                 }
 
-                node.node(trait_node);
+                trait_node
             }
-            DeclKind::Impl {
+            Decl::Impl {
                 trait_name,
                 type_name,
                 body,
@@ -218,11 +224,9 @@ impl BrakionTreeVisitor for Printer {
                     impl_node.node(member_node);
                 }
 
-                node.node(impl_node);
+                impl_node
             }
         }
-
-        node
     }
 
     fn visit_stmt(&mut self, stmt: &mut Stmt) -> Self::StmtResult {

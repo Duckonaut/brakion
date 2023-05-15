@@ -19,7 +19,7 @@ fn compare_token_slice_kinds(a: &[Token], b: &[TokenKind]) {
 }
 
 fn check_output_token_kinds(source: &str, expected: &[TokenKind]) {
-    let errors = ErrorModule::new_ref();
+    let errors = ErrorModule::new();
     let config = Config::default();
 
     let unit = Unit::new(
@@ -38,8 +38,8 @@ fn check_output_token_kinds(source: &str, expected: &[TokenKind]) {
         tokens.push(token);
     }
 
-    if !errors.lock().unwrap().errors.is_empty() {
-        errors.lock().unwrap().dump(&mut units);
+    if !errors.is_empty() {
+        errors.dump(&mut units);
         panic!("Lexer produced errors");
     }
 
@@ -47,7 +47,7 @@ fn check_output_token_kinds(source: &str, expected: &[TokenKind]) {
 }
 
 fn check_output_token_span_positions(source: &str, expected: &[(usize, usize, usize, usize)]) {
-    let errors = ErrorModule::new_ref();
+    let errors = ErrorModule::new();
     let config = Config::default();
 
     let unit = Unit::new(
@@ -66,8 +66,8 @@ fn check_output_token_span_positions(source: &str, expected: &[(usize, usize, us
         tokens.push(token);
     }
 
-    if !errors.lock().unwrap().errors.is_empty() {
-        errors.lock().unwrap().dump(&mut units);
+    if !errors.is_empty() {
+        errors.dump(&mut units);
         panic!("Lexer produced errors");
     }
 
@@ -85,7 +85,7 @@ fn check_output_token_kinds_with_errors(
     source: &str,
     expected: &[TokenKind],
 ) -> Vec<crate::errors::Error> {
-    let errors = ErrorModule::new_ref();
+    let errors = ErrorModule::new();
     let config = Config::default();
 
     let mut unit = Unit::new(
@@ -104,8 +104,7 @@ fn check_output_token_kinds_with_errors(
 
     compare_token_slice_kinds(&tokens, expected);
 
-    let err = errors.lock().unwrap().errors.clone();
-    err
+    errors.errors()
 }
 
 #[test]
@@ -563,7 +562,7 @@ fn char_too_long() {
 
 #[test]
 fn keywords() {
-    let source = "pub mod fn type trait impl var and or is as for in if else match on while break continue return true false void";
+    let source = "pub mod fn type trait impl var and or is as for in if else match on while break continue return true false void self";
 
     let expected = vec![
         TokenKind::Pub,
@@ -590,6 +589,7 @@ fn keywords() {
         TokenKind::True,
         TokenKind::False,
         TokenKind::Void,
+        TokenKind::Self_,
         TokenKind::Eof,
     ];
 
@@ -601,7 +601,7 @@ fn identifiers() {
     let source = "self a b abc a_b _a _abc ___abc Abc aBC _ABC ą _ą _Ą ł _ _0 _a0 a0";
 
     let expected = vec![
-        TokenKind::Identifier("self".to_string()),
+        TokenKind::Self_,
         TokenKind::Identifier("a".to_string()),
         TokenKind::Identifier("b".to_string()),
         TokenKind::Identifier("abc".to_string()),
@@ -692,7 +692,7 @@ fn comments_filter() {
 
     // Inlined from check_output_tokens with filter
 
-    let errors = ErrorModule::new_ref();
+    let errors = ErrorModule::new();
     let config = Config::default();
 
     let unit = Unit::new(
@@ -713,8 +713,8 @@ fn comments_filter() {
         tokens.push(token);
     }
 
-    if !errors.lock().unwrap().errors.is_empty() {
-        errors.lock().unwrap().dump(&mut units);
+    if !errors.is_empty() {
+        errors.dump(&mut units);
         panic!("Lexer produced errors");
     }
 

@@ -87,6 +87,7 @@ pub enum TokenKind {
     True,
     False,
     Void,
+    Self_,
 
     Eof,
     Comment(String),
@@ -150,6 +151,7 @@ impl Display for TokenKind {
             TokenKind::True => write!(f, "true"),
             TokenKind::False => write!(f, "false"),
             TokenKind::Void => write!(f, "void"),
+            TokenKind::Self_ => write!(f, "self"),
             TokenKind::Eof => write!(f, "EOF"),
             TokenKind::Comment(s) => write!(f, "#{s}"),
         }

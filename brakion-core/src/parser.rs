@@ -3,7 +3,7 @@ use crate::lexer::TokenProducer;
 use crate::repr::*;
 use crate::tokens::{Token, TokenKind};
 use crate::unit::Span;
-use crate::{errors::ErrorModuleRef, Config};
+use crate::{errors::ErrorModule, Config};
 
 /// Macro for trying to get a match from a list of functions
 /// If a function returns a value, the token is returned
@@ -11,28 +11,16 @@ use crate::{errors::ErrorModuleRef, Config};
 /// If a function returns None, the next function is tried
 macro_rules! alternatives {
     () => {
-        ParserResult::None
+        Err((ParserError::InvalidStart, None))
     };
     ($e:expr) => {
         $e
     };
     ($head:expr $(,$tail:expr)* $(,)?) => {
         match $head {
-            ParserResult::Ok(t) => ParserResult::Ok(t),
-            ParserResult::Err(e, s) => ParserResult::Err(e, s),
-            ParserResult::None => alternatives!($($tail,)*),
-        }
-    };
-}
-
-/// Macro as an alternative to ? for ParserResult since it isn't overloadable yet
-/// Track https://github.com/rust-lang/rust/issues/84277
-macro_rules! propagate {
-    ($e:expr) => {
-        match $e {
-            ParserResult::Ok(t) => t,
-            ParserResult::Err(e, s) => return ParserResult::Err(e, s),
-            ParserResult::None => return ParserResult::None,
+            Ok(t) => Ok(t),
+            Err((ParserError::InvalidStart, _)) => alternatives!($($tail),*),
+            Err((e, s)) => Err((e, s)),
         }
     };
 }
@@ -47,26 +35,20 @@ where
 {
     config: &'a Config,
     token_producer: P,
-    errors: ErrorModuleRef,
+    errors: ErrorModule,
     is_at_end: bool,
     token: Option<Token>,
     last_span: Option<Span>,
 }
 
-#[derive(Debug)]
-#[must_use]
-pub(crate) enum ParserResult<T> {
-    Ok(T),
-    None,
-    Err(ParserError, Option<Span>),
-}
+type ParserResult<T> = Result<T, (ParserError, Option<Span>)>;
 
 impl<'a, T> Parser<'a, T>
 where
     T: TokenProducer,
 {
     /// Creates a Parser from a TokenProducer and references to the Config and ErrorModule
-    pub fn new(config: &'a Config, token_producer: T, errors: ErrorModuleRef) -> Self {
+    pub fn new(config: &'a Config, token_producer: T, errors: ErrorModule) -> Self {
         let mut s = Self {
             config,
             token_producer,
@@ -87,23 +69,33 @@ where
     pub fn parse(&mut self) -> Vec<Decl> {
         let mut decls = Vec::new();
 
-        while !self.is_at_end {
+        loop {
             let result = self.parse_decl();
 
             match result {
-                ParserResult::Ok(decl) => {
+                Ok(Some(decl)) => {
                     decls.push(decl);
                 }
-                ParserResult::None => {
-                    self.errors
-                        .lock()
-                        .unwrap()
-                        .add_parser_error(ParserError::ExpectedDecl, self.token_span());
-                    break;
+                Ok(None) => {
+                    if self.is_at_end {
+                        break;
+                    } else {
+                        self.errors
+                            .add_parser_error(ParserError::ExpectedDecl, self.token_span());
+
+                        self.synchronize(&[
+                            TokenKind::Pub,
+                            TokenKind::Impl,
+                            TokenKind::Mod,
+                            TokenKind::Fn,
+                            TokenKind::Type,
+                            TokenKind::Trait,
+                        ]);
+                    }
                 }
-                ParserResult::Err(err, span) => {
+                Err((err, span)) => {
                     let fatal = err.is_fatal();
-                    self.errors.lock().unwrap().add_parser_error(
+                    self.errors.add_parser_error(
                         err,
                         match span {
                             Some(span) => Some(span),
@@ -132,72 +124,58 @@ where
 
     // Consumes tokens until a new "starting" token is found
     fn synchronize(&mut self, stoppers: &[TokenKind]) {
-        self.next_token();
-
-        while !self.is_at_end {
-            if stoppers.contains(self.token_kind()) {
-                return;
-            }
-
+        while !self.is_at_end && !stoppers.contains(self.token_kind()) {
             self.next_token();
         }
     }
 
-    pub(crate) fn parse_decl(&mut self) -> ParserResult<Decl> {
-        let visibility = propagate!(self.parse_visibility());
-
-        let visibility_span = self.last_token_span(); // Not necessarily the visibility span since
-                                                      // the visibility could be implicit. Only
-                                                      // used in the case of `pub impl` though, so
-                                                      // it's fine.
-
-        let kind = propagate!(alternatives!(
+    pub(crate) fn parse_decl(&mut self) -> ParserResult<Option<Decl>> {
+        let result = alternatives!(
             self.parse_impl_decl(),
-            self.parse_module_decl(),
-            self.parse_function_decl(),
-            self.parse_type_decl(),
-            self.parse_trait_decl(),
-        ));
+            self.parse_visibility_starting_decl(),
+        );
 
-        if let DeclKind::Impl { .. } = kind {
-            if visibility == Visibility::Public {
-                self.errors
-                    .lock()
-                    .unwrap()
-                    .add_parser_error(ParserError::PubInTraitImpl, visibility_span);
-            }
-            ParserResult::Ok(Decl {
-                visibility: Visibility::Public,
-                kind,
-            })
-        } else {
-            ParserResult::Ok(Decl { visibility, kind })
+        match result {
+            Ok(decl) => Ok(Some(decl)),
+            Err((ParserError::InvalidStart, _)) => Ok(None),
+            Err((err, span)) => Err((err, span)),
         }
+    }
+
+    fn parse_visibility_starting_decl(&mut self) -> ParserResult<Decl> {
+        let visibility = self.parse_visibility()?;
+
+        alternatives!(
+            self.parse_module_decl(visibility),
+            self.parse_function_decl(visibility),
+            self.parse_type_decl(visibility),
+            self.parse_trait_decl(visibility),
+        )
     }
 
     pub(crate) fn parse_visibility(&mut self) -> ParserResult<Visibility> {
         if self.match_token(TokenKind::Pub) {
-            ParserResult::Ok(Visibility::Public)
+            Ok(Visibility::Public)
         } else {
-            ParserResult::Ok(Visibility::Private)
+            Ok(Visibility::Private)
         }
     }
 
-    fn parse_impl_decl(&mut self) -> ParserResult<DeclKind> {
+    fn parse_impl_decl(&mut self) -> ParserResult<Decl> {
         if !self.match_token(TokenKind::Impl) {
-            return ParserResult::None;
+            return Err((ParserError::InvalidStart, self.token_span()));
         }
 
-        let trait_name = propagate!(self.parse_namespaced_identifier());
+        let trait_name = self.parse_namespaced_identifier()?;
 
-        propagate!(self.consume_token(TokenKind::For, ParserError::ExpectedToken(TokenKind::For),));
+        self.consume_token(TokenKind::For, ParserError::ExpectedToken(TokenKind::For))?;
 
-        let ty = propagate!(self.parse_type());
+        let ty = self.parse_type()?;
 
-        propagate!(self.consume_token(
+        self.consume_token(
             TokenKind::LeftBrace,
             ParserError::ExpectedToken(TokenKind::LeftBrace),
-        ));
+        )?;
 
         let mut body = Vec::new();
 
@@ -205,43 +183,40 @@ where
             let start_span = self.token_span();
             if self.match_token(TokenKind::Pub) {
                 self.errors
-                    .lock()
-                    .unwrap()
                     .add_parser_error(ParserError::PubInTraitImpl, start_span);
             }
 
-            let start_span = self.token_span();
             let function = self.parse_function();
 
             match function {
-                ParserResult::Ok(function) => body.push(function),
-                ParserResult::None => {
-                    return ParserResult::Err(ParserError::ExpectedFunction, start_span);
+                Ok(function) => body.push(function),
+                Err((ParserError::InvalidStart, s)) => {
+                    return Err((ParserError::ExpectedFunction, s));
                 }
-                ParserResult::Err(err, span) => {
-                    self.errors.lock().unwrap().add_parser_error(err, span);
+                Err((err, span)) => {
+                    self.errors.add_parser_error(err, span);
                 }
             }
         }
 
-        ParserResult::Ok(DeclKind::Impl {
+        Ok(Decl::Impl {
             trait_name,
             type_name: ty,
             body,
         })
     }
 
-    fn parse_module_decl(&mut self) -> ParserResult<DeclKind> {
+    fn parse_module_decl(&mut self, visibility: Visibility) -> ParserResult<Decl> {
         if !self.match_token(TokenKind::Mod) {
-            return ParserResult::None;
+            return Err((ParserError::InvalidStart, self.token_span()));
         }
 
-        let name = propagate!(self.parse_identifier());
+        let name = self.parse_identifier()?;
 
-        propagate!(self.consume_token(
+        self.consume_token(
             TokenKind::LeftBrace,
             ParserError::ExpectedToken(TokenKind::LeftBrace),
-        ));
+        )?;
 
         let brace_span = self.last_token_span();
 
@@ -249,19 +224,21 @@ where
 
         while !self.is_at_end {
             if self.match_token(TokenKind::RightBrace) {
-                return ParserResult::Ok(DeclKind::Module { name, body });
+                return Ok(Decl::Module {
+                    visibility,
+                    name,
+                    body,
+                });
             }
 
             let result = self.parse_decl();
 
             match result {
-                ParserResult::Ok(decl) => {
+                Ok(Some(decl)) => {
                     body.push(decl);
                 }
-                ParserResult::None => {
+                Ok(None) => {
                     self.errors
-                        .lock()
-                        .unwrap()
                         .add_parser_error(ParserError::ExpectedDecl, self.token_span());
 
                     self.synchronize(&[
@@ -274,11 +251,11 @@ where
                         TokenKind::RightBrace,
                     ]);
                 }
-                ParserResult::Err(err, span) => {
+                Err((err, span)) => {
                     let fatal = err.is_fatal();
 
                     if !fatal {
-                        self.errors.lock().unwrap().add_parser_error(
+                        self.errors.add_parser_error(
                             err,
                             match span {
                                 Some(span) => Some(span),
@@ -295,46 +272,50 @@ where
                             TokenKind::RightBrace,
                         ]);
                     } else {
-                        return ParserResult::Err(err, span);
+                        return Err((err, span));
                     }
                 }
             }
         }
 
-        ParserResult::Err(ParserError::UnterminatedScope, brace_span)
+        Err((ParserError::UnterminatedScope, brace_span))
     }
 
-    fn parse_function_decl(&mut self) -> ParserResult<DeclKind> {
-        let function = propagate!(self.parse_function());
+    fn parse_function_decl(&mut self, visibility: Visibility) -> ParserResult<Decl> {
+        let function = self.parse_function()?;
 
-        ParserResult::Ok(DeclKind::Function(function))
+        Ok(Decl::Function {
+            visibility,
+            function,
+        })
     }
 
     fn parse_function(&mut self) -> ParserResult<Function> {
-        let signature = propagate!(self.parse_function_signature());
+        let signature = self.parse_function_signature()?;
         let body = match self.parse_executable_block() {
-            ParserResult::Ok(body) => body,
-            ParserResult::None => {
-                return ParserResult::Err(ParserError::ExpectedBody, self.token_span());
+            Ok(body) => body,
+            Err((ParserError::InvalidStart, s)) => {
+                return Err((ParserError::ExpectedBody, s));
             }
-            ParserResult::Err(err, span) => {
-                return ParserResult::Err(err, span);
+            Err((err, span)) => {
+                return Err((err, span));
             }
         };
 
-        ParserResult::Ok(Function { signature, body })
+        Ok(Function { signature, body })
     }
 
-    fn parse_type_decl(&mut self) -> ParserResult<DeclKind> {
+    fn parse_type_decl(&mut self, visibility: Visibility) -> ParserResult<Decl> {
         if !self.match_token(TokenKind::Type) {
-            return ParserResult::None;
+            return Err((ParserError::InvalidStart, self.token_span()));
         }
 
-        let name = propagate!(self.parse_identifier());
+        let name = self.parse_identifier()?;
         let name_span = name.span;
 
         if self.match_token(TokenKind::Semicolon) {
-            return ParserResult::Ok(DeclKind::Type {
+            return Ok(Decl::Type {
+                visibility,
                 name,
                 body: TypeBody {
                     variants: vec![TypeVariant {
@@ -349,10 +330,10 @@ where
             });
         }
 
-        propagate!(self.consume_token(
+        self.consume_token(
             TokenKind::LeftBrace,
             ParserError::ExpectedToken(TokenKind::LeftBrace),
-        ));
+        )?;
 
         let mut variants = Vec::new();
 
@@ -370,7 +351,8 @@ where
                     });
                 }
 
-                return ParserResult::Ok(DeclKind::Type {
+                return Ok(Decl::Type {
+                    visibility,
                     name,
                     body: TypeBody {
                         variants,
@@ -379,27 +361,34 @@ where
                 });
             }
 
-            let variant_name = propagate!(self.parse_identifier());
+            let variant_name = if self.match_token(TokenKind::Self_) {
+                Identifier {
+                    span: self.last_token_span().unwrap(),
+                    name: "self".to_string(),
+                }
+            } else {
+                self.parse_identifier()?
+            };
             if self.match_token(TokenKind::Semicolon) {
                 variants.push(TypeVariant {
                     name: variant_name,
                     fields: Vec::new(),
                 });
             } else {
-                propagate!(self.consume_token(
+                self.consume_token(
                     TokenKind::LeftBrace,
                     ParserError::ExpectedToken(TokenKind::LeftBrace),
-                ));
+                )?;
 
                 let mut fields = Vec::new();
 
                 while !self.match_token(TokenKind::RightBrace) && !self.is_at_end {
-                    let field_name = propagate!(self.parse_identifier());
-                    propagate!(self.consume_token(
+                    let field_name = self.parse_identifier()?;
+                    self.consume_token(
                         TokenKind::Colon,
                         ParserError::ExpectedToken(TokenKind::Colon),
-                    ));
-                    let field_type = propagate!(self.parse_type());
+                    )?;
+                    let field_type = self.parse_type()?;
 
                     fields.push(Field {
                         name: field_name,
@@ -410,10 +399,10 @@ where
                         if self.match_token(TokenKind::RightBrace) {
                             break;
                         } else {
-                            return ParserResult::Err(
+                            return Err((
                                 ParserError::ExpectedToken(TokenKind::Comma),
                                 self.token_span(),
-                            );
+                            ));
                         }
                     }
                 }
@@ -439,43 +428,45 @@ where
 
         while !self.match_token(TokenKind::RightBrace) && !self.is_at_end {
             if let TokenKind::Identifier(_) = self.token_kind() {
-                return ParserResult::Err(ParserError::VariantMethodInterweave, self.token_span());
+                return Err((ParserError::VariantMethodInterweave, self.token_span()));
             }
-            let visibility = propagate!(self.parse_visibility());
-            let f = propagate!(self.parse_function());
+            let visibility = self.parse_visibility()?;
+            let f = self.parse_function()?;
             methods.push((visibility, f));
         }
 
-        ParserResult::Ok(DeclKind::Type {
+        Ok(Decl::Type {
+            visibility,
             name,
             body: TypeBody { variants, methods },
         })
     }
 
-    fn parse_trait_decl(&mut self) -> ParserResult<DeclKind> {
+    fn parse_trait_decl(&mut self, visibility: Visibility) -> ParserResult<Decl> {
         if !self.match_token(TokenKind::Trait) {
-            return ParserResult::None;
+            return Err((ParserError::InvalidStart, self.token_span()));
         }
 
-        let name = propagate!(self.parse_identifier());
+        let name = self.parse_identifier()?;
 
-        propagate!(self.consume_token(
+        self.consume_token(
             TokenKind::LeftBrace,
             ParserError::ExpectedToken(TokenKind::LeftBrace),
-        ));
+        )?;
 
         let mut methods = Vec::new();
 
         while !self.match_token(TokenKind::RightBrace) && !self.is_at_end {
-            let f = propagate!(self.parse_function_signature());
-            propagate!(self.consume_token(
+            let f = self.parse_function_signature()?;
+            self.consume_token(
                 TokenKind::Semicolon,
                 ParserError::ExpectedToken(TokenKind::Semicolon),
-            ));
+            )?;
             methods.push(f);
         }
 
-        ParserResult::Ok(DeclKind::Trait {
+        Ok(Decl::Trait {
+            visibility,
             name,
             body: TraitBody { methods },
         })
@@ -483,37 +474,37 @@ where
 
     fn parse_function_signature(&mut self) -> ParserResult<FunctionSignature> {
         if !self.match_token(TokenKind::Fn) {
-            return ParserResult::None;
+            return Err((ParserError::InvalidStart, self.token_span()));
         }
 
-        let name = propagate!(self.parse_identifier());
-        propagate!(self.consume_token(
+        let name = self.parse_identifier()?;
+        self.consume_token(
             TokenKind::LeftParen,
             ParserError::ExpectedToken(TokenKind::LeftParen),
-        ));
+        )?;
         let mut takes_self = false;
         let mut self_precondition = None;
         let mut parameters = Vec::new();
 
         if !self.match_token(TokenKind::RightParen) {
-            let name = propagate!(self.parse_identifier());
+            let name = self.parse_identifier()?;
 
             if name.name == "self" {
                 takes_self = true;
 
                 if self.match_token(TokenKind::Question) {
-                    let precond = propagate!(self.parse_type());
+                    let precond = self.parse_type()?;
                     self_precondition = Some(precond);
                 }
             } else {
-                propagate!(self.consume_token(
+                self.consume_token(
                     TokenKind::Colon,
                     ParserError::ExpectedToken(TokenKind::Colon),
-                ));
-                let ty = propagate!(self.parse_type());
+                )?;
+                let ty = self.parse_type()?;
 
                 let kind = if self.match_token(TokenKind::Question) {
-                    ParameterSpec::Preconditioned(propagate!(self.parse_type()))
+                    ParameterSpec::Preconditioned(self.parse_type()?)
                 } else {
                     ParameterSpec::Basic
                 };
@@ -522,26 +513,23 @@ where
             }
 
             if !self.match_token(TokenKind::Comma) {
-                propagate!(self.consume_token(
+                self.consume_token(
                     TokenKind::RightParen,
                     ParserError::ExpectedToken(TokenKind::RightParen),
-                ));
+                )?;
             } else {
                 while !self.match_token(TokenKind::RightParen) && !self.is_at_end {
                     if parameters.len() == self.config.max_function_arguments {
-                        return ParserResult::Err(
-                            ParserError::TooManyFunctionParameters,
-                            self.token_span(),
-                        );
+                        return Err((ParserError::TooManyFunctionParameters, self.token_span()));
                     }
 
-                    let param = propagate!(self.parse_function_param());
+                    let param = self.parse_function_param()?;
                     parameters.push(param);
                     if !self.match_token(TokenKind::Comma) {
-                        propagate!(self.consume_token(
+                        self.consume_token(
                             TokenKind::RightParen,
                             ParserError::ExpectedToken(TokenKind::RightParen),
-                        ));
+                        )?;
                         break;
                     }
                 }
@@ -549,7 +537,7 @@ where
         }
 
         let return_type = if self.match_token(TokenKind::Arrow) {
-            propagate!(self.parse_type())
+            self.parse_type()?
         } else {
             TypeReference {
                 kind: TypeReferenceKind::Void,
@@ -557,7 +545,7 @@ where
             }
         };
 
-        ParserResult::Ok(FunctionSignature {
+        Ok(FunctionSignature {
             name,
             takes_self,
             self_precondition,
@@ -567,47 +555,58 @@ where
     }
 
     fn parse_function_param(&mut self) -> ParserResult<Parameter> {
-        let name = propagate!(self.parse_identifier());
-        propagate!(self.consume_token(
+        let name = self.parse_identifier()?;
+        self.consume_token(
             TokenKind::Colon,
             ParserError::ExpectedToken(TokenKind::Colon),
-        ));
-        let ty = propagate!(self.parse_type());
+        )?;
+        let ty = self.parse_type()?;
 
         let kind = if self.match_token(TokenKind::Question) {
-            ParameterSpec::Preconditioned(propagate!(self.parse_type()))
+            ParameterSpec::Preconditioned(self.parse_type()?)
         } else {
             ParameterSpec::Basic
         };
 
-        ParserResult::Ok(Parameter { name, ty, kind })
+        Ok(Parameter { name, ty, kind })
     }
 
     fn parse_executable_block(&mut self) -> ParserResult<Vec<Stmt>> {
-        let opening_brace_span = self.token_span();
         if !self.match_token(TokenKind::LeftBrace) {
-            return ParserResult::None;
+            return Err((ParserError::InvalidStart, self.token_span()));
         }
+        let opening_brace_span = self.last_token_span();
 
         let mut stmts = Vec::new();
 
         while !self.is_at_end {
             if self.match_token(TokenKind::RightBrace) {
-                return ParserResult::Ok(stmts);
+                return Ok(stmts);
             }
 
-            let stmt = propagate!(self.parse_stmt());
+            let result = self.parse_stmt();
 
-            stmts.push(stmt);
+            match result {
+                Ok(Some(stmt)) => stmts.push(stmt),
+                Ok(None) => {
+                    self.errors
+                        .add_parser_error(ParserError::ExpectedStmt, self.token_span());
+                    self.synchronize(&[]);
+                }
+                Err((e, s)) => {
+                    self.errors.add_parser_error(e, s);
+                    self.synchronize(&[]);
+                }
+            }
         }
 
-        ParserResult::Err(ParserError::UnterminatedScope, opening_brace_span)
+        Err((ParserError::UnterminatedScope, opening_brace_span))
     }
 
-    pub(crate) fn parse_stmt(&mut self) -> ParserResult<Stmt> {
+    pub(crate) fn parse_stmt(&mut self) -> ParserResult<Option<Stmt>> {
         let start_span = self.token_span();
 
-        let stmt_kind = propagate!(alternatives!(
+        let result = alternatives!(
             self.parse_block_stmt(), // first all the statements that start with a keyword
             self.parse_variable_stmt(),
             self.parse_if_stmt(),
@@ -618,27 +617,38 @@ where
             self.parse_break_stmt(),
             self.parse_continue_stmt(),
             self.parse_assignment_or_expr_stmt(), // must be last, catch-all, handles expressions
-        ));
+        );
 
-        ParserResult::Ok(Stmt {
-            kind: stmt_kind,
-            span: Span::from_spans(start_span.unwrap(), self.last_token_span().unwrap()),
-        })
+        match result {
+            Ok(kind) => Ok(Some(Stmt {
+                kind,
+                span: Span::from_spans(start_span.unwrap(), self.last_token_span().unwrap()),
+            })),
+            Err((ParserError::InvalidStart, _)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn require_stmt(&mut self) -> ParserResult<Stmt> {
+        match self.parse_stmt()? {
+            Some(stmt) => Ok(stmt),
+            None => Err((ParserError::ExpectedStmt, self.token_span())),
+        }
     }
 
     fn parse_block_stmt(&mut self) -> ParserResult<StmtKind> {
-        ParserResult::Ok(StmtKind::Block(propagate!(self.parse_executable_block())))
+        Ok(StmtKind::Block(self.parse_executable_block()?))
     }
 
     fn parse_variable_stmt(&mut self) -> ParserResult<StmtKind> {
         if !self.match_token(TokenKind::Var) {
-            return ParserResult::None;
+            return Err((ParserError::InvalidStart, self.token_span()));
         }
 
-        let name = propagate!(self.parse_identifier());
+        let name = self.parse_identifier()?;
 
         let ty = if self.match_token(TokenKind::Colon) {
-            propagate!(self.parse_type())
+            self.parse_type()?
         } else {
             TypeReference {
                 kind: TypeReferenceKind::Infer,
@@ -646,37 +656,37 @@ where
             }
         };
 
-        propagate!(self.consume_token(
+        self.consume_token(
             TokenKind::Equal,
             ParserError::ExpectedToken(TokenKind::Equal),
-        ));
+        )?;
 
-        let value = propagate!(self.parse_expr());
+        let value = self.require_expr()?;
 
-        propagate!(self.consume_token(
+        self.consume_token(
             TokenKind::Semicolon,
             ParserError::ExpectedToken(TokenKind::Semicolon),
-        ));
+        )?;
 
-        ParserResult::Ok(StmtKind::Variable { name, ty, value })
+        Ok(StmtKind::Variable { name, ty, value })
     }
 
     fn parse_if_stmt(&mut self) -> ParserResult<StmtKind> {
         if !self.match_token(TokenKind::If) {
-            return ParserResult::None;
+            return Err((ParserError::InvalidStart, self.token_span()));
         }
 
-        let condition = propagate!(self.parse_expr());
+        let condition = self.require_expr()?;
 
-        let then = propagate!(self.parse_stmt());
+        let then = self.require_stmt()?;
 
         let otherwise = if self.match_token(TokenKind::Else) {
-            Some(propagate!(self.parse_stmt()))
+            Some(self.require_stmt()?)
         } else {
             None
         };
 
-        ParserResult::Ok(StmtKind::If {
+        Ok(StmtKind::If {
             condition,
             then: Box::new(then),
             otherwise: otherwise.map(Box::new),
@@ -685,14 +695,14 @@ where
 
     fn parse_while_stmt(&mut self) -> ParserResult<StmtKind> {
         if !self.match_token(TokenKind::While) {
-            return ParserResult::None;
+            return Err((ParserError::InvalidStart, self.token_span()));
         }
 
-        let condition = propagate!(self.parse_expr());
+        let condition = self.require_expr()?;
 
-        let body = propagate!(self.parse_stmt());
+        let body = self.require_stmt()?;
 
-        ParserResult::Ok(StmtKind::While {
+        Ok(StmtKind::While {
             condition,
             body: Box::new(body),
         })
@@ -700,18 +710,18 @@ where
 
     fn parse_for_stmt(&mut self) -> ParserResult<StmtKind> {
         if !self.match_token(TokenKind::For) {
-            return ParserResult::None;
+            return Err((ParserError::InvalidStart, self.token_span()));
         }
 
-        let name = propagate!(self.parse_identifier());
+        let name = self.parse_identifier()?;
 
-        propagate!(self.consume_token(TokenKind::In, ParserError::ExpectedToken(TokenKind::In),));
+        self.consume_token(TokenKind::In, ParserError::ExpectedToken(TokenKind::In))?;
 
-        let iterable = propagate!(self.parse_expr());
+        let iterable = self.require_expr()?;
 
-        let body = propagate!(self.parse_stmt());
+        let body = self.require_stmt()?;
 
-        ParserResult::Ok(StmtKind::For {
+        Ok(StmtKind::For {
             name,
             iterable,
             body: Box::new(body),
@@ -720,16 +730,16 @@ where
 
     fn parse_match_stmt(&mut self) -> ParserResult<StmtKind> {
         if !self.match_token(TokenKind::Match) {
-            return ParserResult::None;
+            return Err((ParserError::InvalidStart, self.token_span()));
         }
 
         let brace_span = self.token_span();
         let expr = if !self.match_token(TokenKind::LeftBrace) {
-            let r = Some(propagate!(self.parse_identifier()));
-            propagate!(self.consume_token(
+            let r = Some(self.parse_identifier()?);
+            self.consume_token(
                 TokenKind::LeftBrace,
                 ParserError::ExpectedToken(TokenKind::LeftBrace),
-            ));
+            )?;
             r
         } else {
             None
@@ -741,131 +751,157 @@ where
             if self.match_token(TokenKind::RightBrace) {
                 break;
             } else if self.is_at_end {
-                return ParserResult::Err(ParserError::UnterminatedScope, brace_span);
+                return Err((ParserError::UnterminatedScope, brace_span));
             }
 
             if self.match_token(TokenKind::On) {
-                let pattern = propagate!(self.parse_match_pattern());
+                let pattern = self.parse_match_pattern()?;
 
-                let body = propagate!(self.parse_stmt());
+                let body = self.require_stmt()?;
 
                 arms.push(MatchArm {
                     pattern,
                     body: Box::new(body),
                 });
             } else if self.match_token(TokenKind::Else) {
-                let body = propagate!(self.parse_stmt());
+                let body = self.require_stmt()?;
+
                 arms.push(MatchArm {
                     pattern: MatchPattern::Wildcard,
                     body: Box::new(body),
                 });
             } else {
-                return ParserResult::Err(ParserError::ExpectedMatchArm, self.token_span());
+                return Err((ParserError::ExpectedMatchArm, self.token_span()));
             }
         }
 
-        ParserResult::Ok(StmtKind::Match { expr, arms })
+        Ok(StmtKind::Match { expr, arms })
     }
 
     fn parse_match_pattern(&mut self) -> ParserResult<MatchPattern> {
-        let expr = propagate!(self.parse_expr());
+        let expr = self.require_expr()?;
 
         let type_ref = expr_to_type_ref(&expr);
 
         if self.match_token(TokenKind::Pipe) {
             if type_ref.is_none() {
-                return ParserResult::Err(ParserError::ExpectedType, Some(expr.span));
+                return Err((ParserError::ExpectedType, Some(expr.span)));
             } else {
                 let mut types = vec![type_ref.unwrap()];
                 while self.match_token(TokenKind::Pipe) {
-                    let ty = propagate!(self.parse_type());
+                    let ty = self.parse_type()?;
                     types.push(ty);
                 }
-                return ParserResult::Ok(MatchPattern::Type(TypeReference {
+                return Ok(MatchPattern::Type(TypeReference {
                     kind: TypeReferenceKind::Union(types),
                     span: Some(Span::from_spans(expr.span, self.last_token_span().unwrap())),
                 }));
             }
         }
 
-        ParserResult::Ok(MatchPattern::Expr(expr))
+        Ok(MatchPattern::Expr(expr))
     }
 
     fn parse_return_stmt(&mut self) -> ParserResult<StmtKind> {
         if !self.match_token(TokenKind::Return) {
-            return ParserResult::None;
+            return Err((ParserError::InvalidStart, self.token_span()));
         }
 
         let return_span = self.last_token_span().unwrap();
 
-        if !self.match_token(TokenKind::Semicolon) {
-            let expr = propagate!(self.parse_expr());
-            propagate!(self.consume_token(
-                TokenKind::Semicolon,
-                ParserError::ExpectedToken(TokenKind::Semicolon),
-            ));
-            ParserResult::Ok(StmtKind::Return(expr))
-        } else {
-            ParserResult::Ok(StmtKind::Return(Expr {
+        let expr = match self.parse_expr()? {
+            Some(expr) => expr,
+            None => Expr {
                 kind: ExprKind::Literal(Literal::Void),
                 span: return_span,
-            }))
-        }
+            },
+        };
+
+        self.consume_token(
+            TokenKind::Semicolon,
+            ParserError::ExpectedToken(TokenKind::Semicolon),
+        )?;
+
+        Ok(StmtKind::Return(expr))
     }
 
     fn parse_break_stmt(&mut self) -> ParserResult<StmtKind> {
         if !self.match_token(TokenKind::Break) {
-            return ParserResult::None;
+            return Err((ParserError::InvalidStart, self.token_span()));
         }
 
-        propagate!(self.consume_token(
+        self.consume_token(
             TokenKind::Semicolon,
             ParserError::ExpectedToken(TokenKind::Semicolon),
-        ));
+        )?;
 
-        ParserResult::Ok(StmtKind::Break)
+        Ok(StmtKind::Break)
     }
 
     fn parse_continue_stmt(&mut self) -> ParserResult<StmtKind> {
         if !self.match_token(TokenKind::Continue) {
-            return ParserResult::None;
+            return Err((ParserError::InvalidStart, self.token_span()));
         }
 
-        propagate!(self.consume_token(
+        self.consume_token(
             TokenKind::Semicolon,
             ParserError::ExpectedToken(TokenKind::Semicolon),
-        ));
+        )?;
 
-        ParserResult::Ok(StmtKind::Continue)
+        Ok(StmtKind::Continue)
     }
 
     fn parse_assignment_or_expr_stmt(&mut self) -> ParserResult<StmtKind> {
-        let expr = propagate!(self.parse_expr());
+        let expr = match self.parse_expr()? {
+            Some(expr) => expr,
+            None => {
+                self.consume_token(TokenKind::Semicolon, ParserError::InvalidStart)?;
+
+                let last_token_span = self.last_token_span().unwrap();
+                return Ok(StmtKind::Expr(Expr {
+                    kind: ExprKind::Literal(Literal::Void),
+                    span: last_token_span,
+                }));
+            }
+        };
 
         if self.match_token(TokenKind::Semicolon) {
-            return ParserResult::Ok(StmtKind::Expr(expr));
+            return Ok(StmtKind::Expr(expr));
         }
 
-        propagate!(self.consume_token(
+        self.consume_token(
             TokenKind::Equal,
-            ParserError::ExpectedToken(TokenKind::Equal)
-        ));
+            ParserError::ExpectedToken(TokenKind::Equal),
+        )?;
 
-        let value = propagate!(self.parse_expr());
+        let value = self.require_expr()?;
 
-        propagate!(self.consume_token(
+        self.consume_token(
             TokenKind::Semicolon,
             ParserError::ExpectedToken(TokenKind::Semicolon),
-        ));
+        )?;
 
-        ParserResult::Ok(StmtKind::Assign {
+        Ok(StmtKind::Assign {
             target: expr,
             value,
         })
     }
 
-    pub(crate) fn parse_expr(&mut self) -> ParserResult<Expr> {
-        self.parse_logical_or_expr()
+    pub(crate) fn parse_expr(&mut self) -> ParserResult<Option<Expr>> {
+        let result = self.parse_logical_or_expr();
+
+        match result {
+            Ok(expr) => Ok(Some(expr)),
+            Err((ParserError::InvalidStart, _)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn require_expr(&mut self) -> ParserResult<Expr> {
+        match self.parse_expr()? {
+            Some(expr) => Ok(expr),
+            None => Err((ParserError::ExpectedExpr, self.token_span())),
+        }
     }
 
     fn parse_binary_left_assoc_expr(
@@ -873,7 +909,7 @@ where
         mut next_level: impl FnMut(&mut Self) -> ParserResult<Expr>,
         pairs: &[(TokenKind, BinaryOp)],
     ) -> ParserResult<Expr> {
-        let mut expr = propagate!(next_level(self));
+        let mut expr = next_level(self)?;
 
         loop {
             if self.is_at_end {
@@ -884,7 +920,7 @@ where
             if pairs.iter().any(|(k, _)| *k == *token) {
                 let op = pairs.iter().find(|(k, _)| *k == *token).unwrap().1.clone();
                 self.next_token();
-                let right = propagate!(next_level(self));
+                let right = next_level(self)?;
                 expr = Expr {
                     span: Span::from_spans(expr.span, right.span),
                     kind: ExprKind::Binary {
@@ -898,7 +934,7 @@ where
             }
         }
 
-        ParserResult::Ok(expr)
+        Ok(expr)
     }
 
     // TODO: or/and short-circuit, so it could be more efficient to parse them as
@@ -928,12 +964,12 @@ where
     }
 
     fn parse_is_expr(&mut self) -> ParserResult<Expr> {
-        let mut expr = propagate!(self.parse_comparison_expr());
+        let mut expr = self.parse_comparison_expr()?;
         loop {
             let token = self.token_kind();
             if *token == (TokenKind::Is) {
                 self.next_token();
-                let ty = propagate!(self.parse_type());
+                let ty = self.parse_type()?;
                 expr = Expr {
                     span: Span::from_spans(expr.span, ty.span.unwrap()),
                     kind: ExprKind::TypeBinary {
@@ -946,7 +982,7 @@ where
                 break;
             }
         }
-        ParserResult::Ok(expr)
+        Ok(expr)
     }
 
     fn parse_comparison_expr(&mut self) -> ParserResult<Expr> {
@@ -982,12 +1018,12 @@ where
     }
 
     fn parse_as_expr(&mut self) -> ParserResult<Expr> {
-        let mut expr = propagate!(self.parse_unary_expr());
+        let mut expr = self.parse_unary_expr()?;
         loop {
             let token = self.token_kind();
             if *token == (TokenKind::As) {
                 self.next_token();
-                let ty = propagate!(self.parse_type());
+                let ty = self.parse_type()?;
                 expr = Expr {
                     span: Span::from_spans(expr.span, ty.span.unwrap()),
                     kind: ExprKind::TypeBinary {
@@ -1000,17 +1036,13 @@ where
                 break;
             }
         }
-        ParserResult::Ok(expr)
+        Ok(expr)
     }
 
     fn parse_unary_expr(&mut self) -> ParserResult<Expr> {
         let mut ops_spans = vec![];
 
-        if self.is_at_end {
-            return ParserResult::None;
-        }
-
-        let mut start_span = self.token_span().unwrap();
+        let mut start_span = self.token_span();
 
         loop {
             let op = if self.match_token(TokenKind::Bang) {
@@ -1021,11 +1053,11 @@ where
                 break;
             };
 
-            ops_spans.push((op, start_span));
-            start_span = self.token_span().unwrap();
+            ops_spans.push((op, start_span.unwrap()));
+            start_span = self.token_span();
         }
 
-        let mut expr = propagate!(self.parse_primary_expr());
+        let mut expr = self.parse_primary_expr()?;
 
         for (op, s) in ops_spans.into_iter().rev() {
             let expr_span = expr.span;
@@ -1038,45 +1070,51 @@ where
             };
         }
 
-        ParserResult::Ok(expr)
+        Ok(expr)
     }
 
     fn parse_primary_expr(&mut self) -> ParserResult<Expr> {
-        if self.match_token(TokenKind::LeftParen) {
-            let paren_span = self.last_token_span().unwrap();
-            let mut expr = propagate!(self.parse_expr());
-            propagate!(self.consume_token(
-                TokenKind::RightParen,
-                ParserError::ExpectedToken(TokenKind::RightParen),
-            ));
-            let span = Span::from_spans(paren_span, self.last_token_span().unwrap());
-            expr.span = span;
-            return ParserResult::Ok(expr);
-        }
-        if self.is_at_end {
-            return ParserResult::None;
-        }
-        let start_span = self.token_span().unwrap();
-        let literal_result = self.parse_literal();
-        match literal_result {
-            ParserResult::Ok(literal) => {
-                return ParserResult::Ok(Expr {
-                    kind: ExprKind::Literal(literal),
-                    span: Span::from_spans(start_span, self.last_token_span().unwrap()),
-                })
-            }
-            ParserResult::Err(e, s) => return ParserResult::Err(e, s),
-            ParserResult::None => {}
-        }
+        alternatives!(
+            self.parse_grouping_expr(),
+            self.parse_literal_expr(),
+            self.parse_identifier_starting_expr(),
+        )
+    }
 
-        self.parse_identifier_starting_expr()
+    fn parse_grouping_expr(&mut self) -> ParserResult<Expr> {
+        if !self.match_token(TokenKind::LeftParen) {
+            return Err((ParserError::InvalidStart, self.token_span()));
+        }
+        let paren_span = self.last_token_span().unwrap();
+
+        let mut expr = self.require_expr()?;
+
+        self.consume_token(
+            TokenKind::RightParen,
+            ParserError::ExpectedToken(TokenKind::RightParen),
+        )?;
+
+        let span = Span::from_spans(paren_span, self.last_token_span().unwrap());
+
+        expr.span = span;
+
+        Ok(expr)
+    }
+
+    fn parse_literal_expr(&mut self) -> ParserResult<Expr> {
+        let start_span = self.token_span();
+        let literal = self.parse_literal()?;
+        Ok(Expr {
+            kind: ExprKind::Literal(literal),
+            span: Span::from_spans(start_span.unwrap(), self.last_token_span().unwrap()),
+        })
     }
 
     fn parse_identifier_starting_expr(&mut self) -> ParserResult<Expr> {
-        if self.is_at_end {
-            return ParserResult::None;
+        if !matches!(self.token_kind(), TokenKind::Identifier(_)) {
+            return Err((ParserError::InvalidStart, self.token_span()));
         }
-        let name = propagate!(self.parse_namespaced_identifier());
+        let name = self.parse_namespaced_identifier()?;
         let name_span = name.span();
 
         let mut expr = Expr {
@@ -1085,10 +1123,10 @@ where
         };
 
         if self.match_token(TokenKind::Arrow) {
-            propagate!(self.consume_token(
+            self.consume_token(
                 TokenKind::LeftBrace,
                 ParserError::ExpectedToken(TokenKind::LeftBrace),
-            ));
+            )?;
 
             let brace_span = self.last_token_span();
             let mut fields = vec![];
@@ -1096,13 +1134,14 @@ where
                 if self.match_token(TokenKind::RightBrace) {
                     break;
                 } else if self.is_at_end {
-                    return ParserResult::Err(ParserError::UnterminatedScope, brace_span);
+                    return Err((ParserError::UnterminatedScope, brace_span));
                 }
 
-                let field_name = propagate!(self.parse_identifier());
+                let field_name = self.parse_identifier()?;
 
                 if self.match_token(TokenKind::Colon) {
-                    let expr = propagate!(self.parse_expr());
+                    let expr = self.require_expr()?;
+
                     fields.push(FieldConstructor::Named {
                         name: field_name,
                         value: expr,
@@ -1115,10 +1154,10 @@ where
                     if self.match_token(TokenKind::RightBrace) {
                         break;
                     } else {
-                        return ParserResult::Err(
+                        return Err((
                             ParserError::ExpectedToken(TokenKind::RightBrace),
                             Some(self.token_span().unwrap()),
-                        );
+                        ));
                     }
                 }
             }
@@ -1134,13 +1173,13 @@ where
                     span: Span::from_spans(expr.span, self.last_token_span().unwrap()),
                 };
             } else {
-                return ParserResult::Err(ParserError::ExpectedType, Some(expr.span));
+                return Err((ParserError::ExpectedType, Some(expr.span)));
             }
         }
 
         while !self.is_at_end {
             if self.match_token(TokenKind::Dot) {
-                let field = propagate!(self.parse_identifier());
+                let field = self.parse_identifier()?;
                 let field_span = field.span;
                 let expr_span = expr.span;
 
@@ -1158,14 +1197,15 @@ where
                     if self.match_token(TokenKind::RightParen) {
                         break;
                     } else if self.is_at_end {
-                        return ParserResult::Err(ParserError::UnterminatedScope, paren_span);
+                        return Err((ParserError::UnterminatedScope, paren_span));
                     }
 
-                    let arg = propagate!(self.parse_expr());
+                    let arg = self.require_expr()?;
                     args.push(arg);
+
                     if !self.match_token(TokenKind::Comma) {
                         if !self.match_token(TokenKind::RightParen) {
-                            return ParserResult::Err(ParserError::UnterminatedScope, paren_span);
+                            return Err((ParserError::UnterminatedScope, paren_span));
                         }
                         break;
                     }
@@ -1182,12 +1222,12 @@ where
                     span: Span::from_spans(expr_span, closing_paren_span),
                 };
             } else if self.match_token(TokenKind::LeftBracket) {
-                let index = propagate!(self.parse_expr());
+                let index = self.require_expr()?;
 
-                propagate!(self.consume_token(
+                self.consume_token(
                     TokenKind::RightBracket,
                     ParserError::ExpectedToken(TokenKind::RightBracket),
-                ));
+                )?;
 
                 let closing_brace_span = self.last_token_span().unwrap();
                 let expr_span = expr.span;
@@ -1204,71 +1244,71 @@ where
             }
         }
 
-        ParserResult::Ok(expr)
+        Ok(expr)
     }
 
     fn parse_literal(&mut self) -> ParserResult<Literal> {
-        if self.match_token(TokenKind::True) {
-            return ParserResult::Ok(Literal::Bool(true));
-        } else if self.match_token(TokenKind::False) {
-            return ParserResult::Ok(Literal::Bool(false));
-        } else if self.match_token(TokenKind::Void) {
-            return ParserResult::Ok(Literal::Void);
-        } else if self.match_token(TokenKind::LeftBracket) {
-            let mut elements = vec![];
-            while !self.match_token(TokenKind::RightBracket) {
-                let element = propagate!(self.parse_expr());
-                elements.push(element);
-                if !self.match_token(TokenKind::Comma) {
-                    propagate!(self.consume_token(
-                        TokenKind::RightBracket,
-                        ParserError::ExpectedToken(TokenKind::RightBracket),
-                    ));
-                    break;
-                }
+        alternatives!(self.parse_list_literal(), self.parse_single_token_literal(),)
+    }
+
+    fn parse_list_literal(&mut self) -> ParserResult<Literal> {
+        if !self.match_token(TokenKind::LeftBracket) {
+            return Err((ParserError::InvalidStart, self.token_span()));
+        }
+
+        let mut elements = vec![];
+        while !self.match_token(TokenKind::RightBracket) {
+            let element = self.require_expr()?;
+
+            elements.push(element);
+            if !self.match_token(TokenKind::Comma) {
+                self.consume_token(
+                    TokenKind::RightBracket,
+                    ParserError::ExpectedToken(TokenKind::RightBracket),
+                )?;
+                break;
             }
-            return ParserResult::Ok(Literal::List(elements));
         }
+        Ok(Literal::List(elements))
+    }
 
-        if self.token.is_none() {
-            return ParserResult::None;
-        }
-
-        // handle the not-so-simple token kinds
-
+    fn parse_single_token_literal(&mut self) -> ParserResult<Literal> {
         let result = match self.token.as_ref().unwrap().kind {
-            TokenKind::Integer(i) => ParserResult::Ok(Literal::Int(i)),
-            TokenKind::Float(f) => ParserResult::Ok(Literal::Float(f)),
-            TokenKind::String(ref s) => ParserResult::Ok(Literal::String(s.clone())),
-            TokenKind::Char(c) => ParserResult::Ok(Literal::Char(c)),
-            _ => ParserResult::None,
+            TokenKind::Integer(i) => Ok(Literal::Int(i)),
+            TokenKind::Float(f) => Ok(Literal::Float(f)),
+            TokenKind::String(ref s) => Ok(Literal::String(s.clone())),
+            TokenKind::Char(c) => Ok(Literal::Char(c)),
+            TokenKind::True => Ok(Literal::Bool(true)),
+            TokenKind::False => Ok(Literal::Bool(false)),
+            TokenKind::Void => Ok(Literal::Void),
+            _ => Err((ParserError::InvalidStart, self.token_span())),
         };
 
         match result {
-            ParserResult::Ok(lit) => {
+            Ok(lit) => {
                 self.next_token();
-                ParserResult::Ok(lit)
+                Ok(lit)
             }
             _ => result,
         }
     }
 
     pub(crate) fn parse_type(&mut self) -> ParserResult<TypeReference> {
-        let mut tys = vec![propagate!(self.parse_type_primary())];
+        let mut tys = vec![self.parse_type_primary()?];
 
         while self.match_token(TokenKind::Pipe) && !self.is_at_end {
-            let ty = propagate!(self.parse_type_primary());
+            let ty = self.parse_type_primary()?;
             tys.push(ty);
         }
 
         if tys.len() == 1 {
-            ParserResult::Ok(tys.pop().unwrap())
+            Ok(tys.pop().unwrap())
         } else {
             let tys_span = Span::from_spans(
                 tys.first().unwrap().span.unwrap(),
                 tys.last().unwrap().span.unwrap(),
             );
-            ParserResult::Ok(TypeReference {
+            Ok(TypeReference {
                 kind: TypeReferenceKind::Union(tys),
                 span: Some(tys_span),
             })
@@ -1277,28 +1317,28 @@ where
 
     fn parse_type_primary(&mut self) -> ParserResult<TypeReference> {
         if self.match_token(TokenKind::Void) {
-            ParserResult::Ok(TypeReference {
+            Ok(TypeReference {
                 kind: TypeReferenceKind::Void,
                 span: self.last_token_span(),
             })
         } else if self.match_token(TokenKind::LeftBracket) {
             let start_span = self.last_token_span().unwrap();
-            let ty = propagate!(self.parse_type());
-            propagate!(self.consume_token(
+            let ty = self.parse_type()?;
+            self.consume_token(
                 TokenKind::RightBracket,
                 ParserError::ExpectedToken(TokenKind::RightBracket),
-            ));
+            )?;
             let end_span = self.last_token_span().unwrap();
 
-            ParserResult::Ok(TypeReference {
+            Ok(TypeReference {
                 kind: TypeReferenceKind::List(Box::new(ty)),
                 span: Some(Span::from_spans(start_span, end_span)),
             })
         } else {
-            let ty = propagate!(self.parse_namespaced_identifier());
+            let ty = self.parse_namespaced_identifier()?;
             let ty_span = ty.span();
 
-            ParserResult::Ok(TypeReference {
+            Ok(TypeReference {
                 kind: TypeReferenceKind::Named(ty),
                 span: Some(ty_span),
             })
@@ -1307,26 +1347,26 @@ where
 
     fn parse_namespaced_identifier(&mut self) -> ParserResult<NamespacedIdentifier> {
         let mut namespace = Vec::new();
-        let mut ident = propagate!(self.parse_identifier());
+        let mut ident = self.parse_identifier()?;
         loop {
             if self.match_token(TokenKind::DoubleColon) {
                 namespace.push(ident);
-                ident = propagate!(self.parse_identifier());
+                ident = self.parse_identifier()?;
             } else {
                 break;
             }
         }
 
-        ParserResult::Ok(NamespacedIdentifier { namespace, ident })
+        Ok(NamespacedIdentifier { namespace, ident })
     }
 
     fn parse_identifier(&mut self) -> ParserResult<Identifier> {
         if let TokenKind::Identifier(name) = self.token_kind().clone() {
             let span = self.token_span().unwrap();
             self.next_token();
-            ParserResult::Ok(Identifier { name, span })
+            Ok(Identifier { name, span })
         } else {
-            ParserResult::Err(ParserError::ExpectedIdentifier, self.token_span())
+            Err((ParserError::ExpectedIdentifier, self.token_span()))
         }
     }
 
@@ -1369,9 +1409,9 @@ where
 
     fn consume_token(&mut self, kind: TokenKind, err: ParserError) -> ParserResult<()> {
         if self.match_token(kind) {
-            ParserResult::Ok(())
+            Ok(())
         } else {
-            ParserResult::Err(err, self.token_span())
+            Err((err, self.token_span()))
         }
     }
 }

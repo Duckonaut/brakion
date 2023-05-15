@@ -10,7 +10,7 @@ use crate::{errors, repr::*, Config, ErrorModule};
 use super::test_span;
 
 fn check_output_tree(source: &str, expected: &[Decl]) {
-    let errors = ErrorModule::new_ref();
+    let errors = ErrorModule::new();
     let config = Config::default();
 
     let unit = Unit::new(
@@ -27,8 +27,8 @@ fn check_output_tree(source: &str, expected: &[Decl]) {
     let mut parser = Parser::new(&config, filtered, errors.clone());
     let output = parser.parse();
 
-    if !errors.lock().unwrap().errors.is_empty() {
-        errors.lock().unwrap().dump(&mut units);
+    if !errors.is_empty() {
+        errors.dump(&mut units);
         panic!("Errors encountered during parsing");
     }
 
@@ -36,7 +36,7 @@ fn check_output_tree(source: &str, expected: &[Decl]) {
 }
 
 fn check_output_errors(source: &str, expected: &[(ParserError, Option<Span>)]) {
-    let errors = ErrorModule::new_ref();
+    let errors = ErrorModule::new();
     let config = Config::default();
 
     let unit = Unit::new(
@@ -53,7 +53,7 @@ fn check_output_errors(source: &str, expected: &[(ParserError, Option<Span>)]) {
     let mut parser = Parser::new(&config, filtered, errors.clone());
     let _ = parser.parse();
 
-    let errors = errors.lock().unwrap().errors.clone();
+    let errors = errors.errors();
 
     if errors.is_empty() {
         panic!("No errors encountered during parsing");
@@ -89,9 +89,9 @@ fn nothing_valid() {
 fn function_signature_basic() {
     check_output_tree(
         "fn main() { }",
-        &[Decl {
+        &[Decl::Function {
             visibility: Visibility::Private,
-            kind: DeclKind::Function(Function {
+            function: Function {
                 signature: FunctionSignature {
                     name: Identifier {
                         span: Span::new(0, Location::new(1, 0, 4), Location::new(1, 0, 8)),
@@ -106,7 +106,7 @@ fn function_signature_basic() {
                     },
                 },
                 body: vec![],
-            }),
+            },
         }],
     );
 }
@@ -115,9 +115,9 @@ fn function_signature_basic() {
 fn function_signature_return_basic() {
     check_output_tree(
         "fn main() -> u8 { }",
-        &[Decl {
+        &[Decl::Function {
             visibility: Visibility::Private,
-            kind: DeclKind::Function(Function {
+            function: Function {
                 signature: FunctionSignature {
                     name: Identifier {
                         span: Span::new(0, Location::new(1, 0, 4), Location::new(1, 0, 8)),
@@ -146,7 +146,7 @@ fn function_signature_return_basic() {
                     },
                 },
                 body: vec![],
-            }),
+            },
         }],
     );
 }
@@ -155,9 +155,9 @@ fn function_signature_return_basic() {
 fn function_signature_return_namespaced() {
     check_output_tree(
         "fn main() -> std::types::u8 { }",
-        &[Decl {
+        &[Decl::Function {
             visibility: Visibility::Private,
-            kind: DeclKind::Function(Function {
+            function: Function {
                 signature: FunctionSignature {
                     name: Identifier {
                         span: Span::new(0, Location::new(1, 0, 4), Location::new(1, 0, 8)),
@@ -203,7 +203,7 @@ fn function_signature_return_namespaced() {
                     },
                 },
                 body: vec![],
-            }),
+            },
         }],
     );
 }
@@ -212,9 +212,9 @@ fn function_signature_return_namespaced() {
 fn function_signature_return_list() {
     check_output_tree(
         "fn main() -> [u8] { }",
-        &[Decl {
+        &[Decl::Function {
             visibility: Visibility::Private,
-            kind: DeclKind::Function(Function {
+            function: Function {
                 signature: FunctionSignature {
                     name: Identifier {
                         span: Span::new(0, Location::new(1, 0, 4), Location::new(1, 0, 8)),
@@ -250,16 +250,16 @@ fn function_signature_return_list() {
                     },
                 },
                 body: vec![],
-            }),
+            },
         }],
     );
 }
 
 #[test]
 fn function_signature_with_params() {
-    let expected = &[Decl {
+    let expected = &[Decl::Function {
         visibility: Visibility::Private,
-        kind: DeclKind::Function(Function {
+        function: Function {
             signature: FunctionSignature {
                 name: Identifier {
                     span: Span::new(0, Location::new(1, 0, 4), Location::new(1, 0, 8)),
@@ -417,7 +417,7 @@ fn function_signature_with_params() {
                 },
             },
             body: vec![],
-        }),
+        },
     }];
     check_output_tree(
         "fn main(a: void, b: u8, c: [u8], d: Foo ? Foo::Bar) -> [u8] { }",
@@ -429,23 +429,21 @@ fn function_signature_with_params() {
 fn type_basic() {
     check_output_tree(
         "type Foo;",
-        &[Decl {
+        &[Decl::Type {
             visibility: Visibility::Private,
-            kind: DeclKind::Type {
-                name: Identifier {
-                    name: "Foo".to_string(),
-                    span: test_span(6, 9),
-                },
-                body: TypeBody {
-                    variants: vec![TypeVariant {
-                        name: Identifier {
-                            name: "self".to_string(),
-                            span: test_span(6, 9),
-                        },
-                        fields: vec![],
-                    }],
-                    methods: vec![],
-                },
+            name: Identifier {
+                name: "Foo".to_string(),
+                span: test_span(6, 9),
+            },
+            body: TypeBody {
+                variants: vec![TypeVariant {
+                    name: Identifier {
+                        name: "self".to_string(),
+                        span: test_span(6, 9),
+                    },
+                    fields: vec![],
+                }],
+                methods: vec![],
             },
         }],
     );
@@ -455,23 +453,21 @@ fn type_basic() {
 fn type_empty() {
     check_output_tree(
         "type Foo { }",
-        &[Decl {
+        &[Decl::Type {
             visibility: Visibility::Private,
-            kind: DeclKind::Type {
-                name: Identifier {
-                    name: "Foo".to_string(),
-                    span: test_span(6, 9),
-                },
-                body: TypeBody {
-                    variants: vec![TypeVariant {
-                        name: Identifier {
-                            name: "self".to_string(),
-                            span: test_span(6, 9),
-                        },
-                        fields: vec![],
-                    }],
-                    methods: vec![],
-                },
+            name: Identifier {
+                name: "Foo".to_string(),
+                span: test_span(6, 9),
+            },
+            body: TypeBody {
+                variants: vec![TypeVariant {
+                    name: Identifier {
+                        name: "self".to_string(),
+                        span: test_span(6, 9),
+                    },
+                    fields: vec![],
+                }],
+                methods: vec![],
             },
         }],
     );
@@ -481,41 +477,39 @@ fn type_empty() {
 fn type_mathods_only() {
     check_output_tree(
         "type Foo { pub fn bar() { } }",
-        &[Decl {
+        &[Decl::Type {
             visibility: Visibility::Private,
-            kind: DeclKind::Type {
-                name: Identifier {
-                    name: "Foo".to_string(),
-                    span: test_span(6, 9),
-                },
-                body: TypeBody {
-                    variants: vec![TypeVariant {
-                        name: Identifier {
-                            name: "self".to_string(),
-                            span: test_span(6, 9),
-                        },
-                        fields: vec![],
-                    }],
-                    methods: vec![(
-                        Visibility::Public,
-                        Function {
-                            signature: FunctionSignature {
-                                name: Identifier {
-                                    name: "bar".to_string(),
-                                    span: test_span(19, 22),
-                                },
-                                takes_self: false,
-                                self_precondition: None,
-                                parameters: vec![],
-                                return_type: TypeReference {
-                                    kind: TypeReferenceKind::Void,
-                                    span: None,
-                                },
+            name: Identifier {
+                name: "Foo".to_string(),
+                span: test_span(6, 9),
+            },
+            body: TypeBody {
+                variants: vec![TypeVariant {
+                    name: Identifier {
+                        name: "self".to_string(),
+                        span: test_span(6, 9),
+                    },
+                    fields: vec![],
+                }],
+                methods: vec![(
+                    Visibility::Public,
+                    Function {
+                        signature: FunctionSignature {
+                            name: Identifier {
+                                name: "bar".to_string(),
+                                span: test_span(19, 22),
                             },
-                            body: vec![],
+                            takes_self: false,
+                            self_precondition: None,
+                            parameters: vec![],
+                            return_type: TypeReference {
+                                kind: TypeReferenceKind::Void,
+                                span: None,
+                            },
                         },
-                    )],
-                },
+                        body: vec![],
+                    },
+                )],
             },
         }],
     );
@@ -525,23 +519,21 @@ fn type_mathods_only() {
 fn type_self_variant_explicit() {
     check_output_tree(
         "type Foo { self; }",
-        &[Decl {
+        &[Decl::Type {
             visibility: Visibility::Private,
-            kind: DeclKind::Type {
-                name: Identifier {
-                    name: "Foo".to_string(),
-                    span: test_span(6, 9),
-                },
-                body: TypeBody {
-                    variants: vec![TypeVariant {
-                        name: Identifier {
-                            name: "self".to_string(),
-                            span: test_span(12, 16),
-                        },
-                        fields: vec![],
-                    }],
-                    methods: vec![],
-                },
+            name: Identifier {
+                name: "Foo".to_string(),
+                span: test_span(6, 9),
+            },
+            body: TypeBody {
+                variants: vec![TypeVariant {
+                    name: Identifier {
+                        name: "self".to_string(),
+                        span: test_span(12, 16),
+                    },
+                    fields: vec![],
+                }],
+                methods: vec![],
             },
         }],
     );
@@ -551,75 +543,71 @@ fn type_self_variant_explicit() {
 fn type_self_variant_field() {
     check_output_tree(
         "type Foo { self { a: u8 } }",
-        &[Decl {
+        &[Decl::Type {
             visibility: Visibility::Private,
-            kind: DeclKind::Type {
-                name: Identifier {
-                    name: "Foo".to_string(),
-                    span: test_span(6, 9),
-                },
-                body: TypeBody {
-                    variants: vec![TypeVariant {
+            name: Identifier {
+                name: "Foo".to_string(),
+                span: test_span(6, 9),
+            },
+            body: TypeBody {
+                variants: vec![TypeVariant {
+                    name: Identifier {
+                        name: "self".to_string(),
+                        span: test_span(12, 16),
+                    },
+                    fields: vec![Field {
                         name: Identifier {
-                            name: "self".to_string(),
-                            span: test_span(12, 16),
+                            name: "a".to_string(),
+                            span: test_span(19, 20),
                         },
-                        fields: vec![Field {
-                            name: Identifier {
-                                name: "a".to_string(),
-                                span: test_span(19, 20),
-                            },
-                            ty: TypeReference {
-                                kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                                    namespace: vec![],
-                                    ident: Identifier {
-                                        name: "u8".to_string(),
-                                        span: test_span(22, 24),
-                                    },
-                                }),
-                                span: Some(test_span(22, 24)),
-                            },
-                        }],
+                        ty: TypeReference {
+                            kind: TypeReferenceKind::Named(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    name: "u8".to_string(),
+                                    span: test_span(22, 24),
+                                },
+                            }),
+                            span: Some(test_span(22, 24)),
+                        },
                     }],
-                    methods: vec![],
-                },
+                }],
+                methods: vec![],
             },
         }],
     );
     check_output_tree(
         "type Foo { self { a: u8, } }",
-        &[Decl {
+        &[Decl::Type {
             visibility: Visibility::Private,
-            kind: DeclKind::Type {
-                name: Identifier {
-                    name: "Foo".to_string(),
-                    span: test_span(6, 9),
-                },
-                body: TypeBody {
-                    variants: vec![TypeVariant {
+            name: Identifier {
+                name: "Foo".to_string(),
+                span: test_span(6, 9),
+            },
+            body: TypeBody {
+                variants: vec![TypeVariant {
+                    name: Identifier {
+                        name: "self".to_string(),
+                        span: test_span(12, 16),
+                    },
+                    fields: vec![Field {
                         name: Identifier {
-                            name: "self".to_string(),
-                            span: test_span(12, 16),
+                            name: "a".to_string(),
+                            span: test_span(19, 20),
                         },
-                        fields: vec![Field {
-                            name: Identifier {
-                                name: "a".to_string(),
-                                span: test_span(19, 20),
-                            },
-                            ty: TypeReference {
-                                kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                                    namespace: vec![],
-                                    ident: Identifier {
-                                        name: "u8".to_string(),
-                                        span: test_span(22, 24),
-                                    },
-                                }),
-                                span: Some(test_span(22, 24)),
-                            },
-                        }],
+                        ty: TypeReference {
+                            kind: TypeReferenceKind::Named(NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    name: "u8".to_string(),
+                                    span: test_span(22, 24),
+                                },
+                            }),
+                            span: Some(test_span(22, 24)),
+                        },
                     }],
-                    methods: vec![],
-                },
+                }],
+                methods: vec![],
             },
         }],
     );
@@ -629,23 +617,21 @@ fn type_self_variant_field() {
 fn type_single_variant() {
     check_output_tree(
         "type Foo { Bar; }",
-        &[Decl {
+        &[Decl::Type {
             visibility: Visibility::Private,
-            kind: DeclKind::Type {
-                name: Identifier {
-                    name: "Foo".to_string(),
-                    span: test_span(6, 9),
-                },
-                body: TypeBody {
-                    variants: vec![TypeVariant {
-                        name: Identifier {
-                            name: "Bar".to_string(),
-                            span: test_span(12, 15),
-                        },
-                        fields: vec![],
-                    }],
-                    methods: vec![],
-                },
+            name: Identifier {
+                name: "Foo".to_string(),
+                span: test_span(6, 9),
+            },
+            body: TypeBody {
+                variants: vec![TypeVariant {
+                    name: Identifier {
+                        name: "Bar".to_string(),
+                        span: test_span(12, 15),
+                    },
+                    fields: vec![],
+                }],
+                methods: vec![],
             },
         }],
     );
@@ -655,56 +641,54 @@ fn type_single_variant() {
 fn type_single_variant_fields() {
     check_output_tree(
         "type Foo { Bar { a: u8, b: u8 } }",
-        &[Decl {
+        &[Decl::Type {
             visibility: Visibility::Private,
-            kind: DeclKind::Type {
-                name: Identifier {
-                    name: "Foo".to_string(),
-                    span: test_span(6, 9),
-                },
-                body: TypeBody {
-                    variants: vec![TypeVariant {
-                        name: Identifier {
-                            name: "Bar".to_string(),
-                            span: test_span(12, 15),
+            name: Identifier {
+                name: "Foo".to_string(),
+                span: test_span(6, 9),
+            },
+            body: TypeBody {
+                variants: vec![TypeVariant {
+                    name: Identifier {
+                        name: "Bar".to_string(),
+                        span: test_span(12, 15),
+                    },
+                    fields: vec![
+                        Field {
+                            name: Identifier {
+                                name: "a".to_string(),
+                                span: test_span(18, 19),
+                            },
+                            ty: TypeReference {
+                                kind: TypeReferenceKind::Named(NamespacedIdentifier {
+                                    namespace: vec![],
+                                    ident: Identifier {
+                                        name: "u8".to_string(),
+                                        span: test_span(21, 23),
+                                    },
+                                }),
+                                span: Some(test_span(21, 23)),
+                            },
                         },
-                        fields: vec![
-                            Field {
-                                name: Identifier {
-                                    name: "a".to_string(),
-                                    span: test_span(18, 19),
-                                },
-                                ty: TypeReference {
-                                    kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                                        namespace: vec![],
-                                        ident: Identifier {
-                                            name: "u8".to_string(),
-                                            span: test_span(21, 23),
-                                        },
-                                    }),
-                                    span: Some(test_span(21, 23)),
-                                },
+                        Field {
+                            name: Identifier {
+                                name: "b".to_string(),
+                                span: test_span(25, 26),
                             },
-                            Field {
-                                name: Identifier {
-                                    name: "b".to_string(),
-                                    span: test_span(25, 26),
-                                },
-                                ty: TypeReference {
-                                    kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                                        namespace: vec![],
-                                        ident: Identifier {
-                                            name: "u8".to_string(),
-                                            span: test_span(28, 30),
-                                        },
-                                    }),
-                                    span: Some(test_span(28, 30)),
-                                },
+                            ty: TypeReference {
+                                kind: TypeReferenceKind::Named(NamespacedIdentifier {
+                                    namespace: vec![],
+                                    ident: Identifier {
+                                        name: "u8".to_string(),
+                                        span: test_span(28, 30),
+                                    },
+                                }),
+                                span: Some(test_span(28, 30)),
                             },
-                        ],
-                    }],
-                    methods: vec![],
-                },
+                        },
+                    ],
+                }],
+                methods: vec![],
             },
         }],
     );
@@ -714,32 +698,30 @@ fn type_single_variant_fields() {
 fn type_multiple_variants() {
     check_output_tree(
         "type Foo { Bar; Baz; }",
-        &[Decl {
+        &[Decl::Type {
             visibility: Visibility::Private,
-            kind: DeclKind::Type {
-                name: Identifier {
-                    name: "Foo".to_string(),
-                    span: test_span(6, 9),
-                },
-                body: TypeBody {
-                    variants: vec![
-                        TypeVariant {
-                            name: Identifier {
-                                name: "Bar".to_string(),
-                                span: test_span(12, 15),
-                            },
-                            fields: vec![],
+            name: Identifier {
+                name: "Foo".to_string(),
+                span: test_span(6, 9),
+            },
+            body: TypeBody {
+                variants: vec![
+                    TypeVariant {
+                        name: Identifier {
+                            name: "Bar".to_string(),
+                            span: test_span(12, 15),
                         },
-                        TypeVariant {
-                            name: Identifier {
-                                name: "Baz".to_string(),
-                                span: test_span(17, 20),
-                            },
-                            fields: vec![],
+                        fields: vec![],
+                    },
+                    TypeVariant {
+                        name: Identifier {
+                            name: "Baz".to_string(),
+                            span: test_span(17, 20),
                         },
-                    ],
-                    methods: vec![],
-                },
+                        fields: vec![],
+                    },
+                ],
+                methods: vec![],
             },
         }],
     );
@@ -749,50 +731,48 @@ fn type_multiple_variants() {
 fn type_variants_method() {
     check_output_tree(
         "type Foo { Bar; Baz; fn foo() { } }",
-        &[Decl {
+        &[Decl::Type {
             visibility: Visibility::Private,
-            kind: DeclKind::Type {
-                name: Identifier {
-                    name: "Foo".to_string(),
-                    span: test_span(6, 9),
-                },
-                body: TypeBody {
-                    variants: vec![
-                        TypeVariant {
+            name: Identifier {
+                name: "Foo".to_string(),
+                span: test_span(6, 9),
+            },
+            body: TypeBody {
+                variants: vec![
+                    TypeVariant {
+                        name: Identifier {
+                            name: "Bar".to_string(),
+                            span: test_span(12, 15),
+                        },
+                        fields: vec![],
+                    },
+                    TypeVariant {
+                        name: Identifier {
+                            name: "Baz".to_string(),
+                            span: test_span(17, 20),
+                        },
+                        fields: vec![],
+                    },
+                ],
+                methods: vec![(
+                    Visibility::Private,
+                    Function {
+                        signature: FunctionSignature {
                             name: Identifier {
-                                name: "Bar".to_string(),
-                                span: test_span(12, 15),
+                                name: "foo".to_string(),
+                                span: test_span(25, 28),
                             },
-                            fields: vec![],
-                        },
-                        TypeVariant {
-                            name: Identifier {
-                                name: "Baz".to_string(),
-                                span: test_span(17, 20),
+                            takes_self: false,
+                            self_precondition: None,
+                            parameters: vec![],
+                            return_type: TypeReference {
+                                kind: TypeReferenceKind::Void,
+                                span: None,
                             },
-                            fields: vec![],
                         },
-                    ],
-                    methods: vec![(
-                        Visibility::Private,
-                        Function {
-                            signature: FunctionSignature {
-                                name: Identifier {
-                                    name: "foo".to_string(),
-                                    span: test_span(25, 28),
-                                },
-                                takes_self: false,
-                                self_precondition: None,
-                                parameters: vec![],
-                                return_type: TypeReference {
-                                    kind: TypeReferenceKind::Void,
-                                    span: None,
-                                },
-                            },
-                            body: vec![],
-                        },
-                    )],
-                },
+                        body: vec![],
+                    },
+                )],
             },
         }],
     );
@@ -824,15 +804,13 @@ fn type_variants_methods_interweave_2() {
 fn mod_empty() {
     check_output_tree(
         "mod foo { }",
-        &[Decl {
+        &[Decl::Module {
             visibility: Visibility::Private,
-            kind: DeclKind::Module {
-                name: Identifier {
-                    name: "foo".to_string(),
-                    span: test_span(5, 8),
-                },
-                body: vec![],
+            name: Identifier {
+                name: "foo".to_string(),
+                span: test_span(5, 8),
             },
+            body: vec![],
         }],
     );
 }
@@ -841,15 +819,13 @@ fn mod_empty() {
 fn mod_empty_pub() {
     check_output_tree(
         "pub mod foo { }",
-        &[Decl {
+        &[Decl::Module {
             visibility: Visibility::Public,
-            kind: DeclKind::Module {
-                name: Identifier {
-                    name: "foo".to_string(),
-                    span: test_span(9, 12),
-                },
-                body: vec![],
+            name: Identifier {
+                name: "foo".to_string(),
+                span: test_span(9, 12),
             },
+            body: vec![],
         }],
     );
 }
@@ -858,33 +834,31 @@ fn mod_empty_pub() {
 fn mod_with_decl() {
     check_output_tree(
         "mod foo { fn bar() { } }",
-        &[Decl {
+        &[Decl::Module {
             visibility: Visibility::Private,
-            kind: DeclKind::Module {
-                name: Identifier {
-                    name: "foo".to_string(),
-                    span: test_span(5, 8),
-                },
-                body: vec![Decl {
-                    visibility: Visibility::Private,
-                    kind: DeclKind::Function(Function {
-                        signature: FunctionSignature {
-                            name: Identifier {
-                                name: "bar".to_string(),
-                                span: test_span(14, 17),
-                            },
-                            takes_self: false,
-                            self_precondition: None,
-                            parameters: vec![],
-                            return_type: TypeReference {
-                                kind: TypeReferenceKind::Void,
-                                span: None,
-                            },
-                        },
-                        body: vec![],
-                    }),
-                }],
+            name: Identifier {
+                name: "foo".to_string(),
+                span: test_span(5, 8),
             },
+            body: vec![Decl::Function {
+                visibility: Visibility::Private,
+                function: Function {
+                    signature: FunctionSignature {
+                        name: Identifier {
+                            name: "bar".to_string(),
+                            span: test_span(14, 17),
+                        },
+                        takes_self: false,
+                        self_precondition: None,
+                        parameters: vec![],
+                        return_type: TypeReference {
+                            kind: TypeReferenceKind::Void,
+                            span: None,
+                        },
+                    },
+                    body: vec![],
+                },
+            }],
         }],
     );
 }
@@ -893,55 +867,54 @@ fn mod_with_decl() {
 fn mod_with_decl_pub() {
     check_output_tree(
         "mod foo { pub fn bar() { } }",
-        &[Decl {
+        &[Decl::Module {
             visibility: Visibility::Private,
-            kind: DeclKind::Module {
-                name: Identifier {
-                    name: "foo".to_string(),
-                    span: test_span(5, 8),
-                },
-                body: vec![Decl {
-                    visibility: Visibility::Public,
-                    kind: DeclKind::Function(Function {
-                        signature: FunctionSignature {
-                            name: Identifier {
-                                name: "bar".to_string(),
-                                span: test_span(18, 21),
-                            },
-                            takes_self: false,
-                            self_precondition: None,
-                            parameters: vec![],
-                            return_type: TypeReference {
-                                kind: TypeReferenceKind::Void,
-                                span: None,
-                            },
-                        },
-                        body: vec![],
-                    }),
-                }],
+            name: Identifier {
+                name: "foo".to_string(),
+                span: test_span(5, 8),
             },
+            body: vec![Decl::Function {
+                visibility: Visibility::Public,
+                function: Function {
+                    signature: FunctionSignature {
+                        name: Identifier {
+                            name: "bar".to_string(),
+                            span: test_span(18, 21),
+                        },
+                        takes_self: false,
+                        self_precondition: None,
+                        parameters: vec![],
+                        return_type: TypeReference {
+                            kind: TypeReferenceKind::Void,
+                            span: None,
+                        },
+                    },
+                    body: vec![],
+                },
+            }],
         }],
     );
 }
 
 #[test]
 fn mod_with_bad_decl() {
-    check_output_errors("mod a { ; }", &[(ParserError::ExpectedDecl, Some(test_span(9, 10)))]);
+    check_output_errors(
+        "mod a { ; }",
+        &[(ParserError::ExpectedDecl, Some(test_span(9, 10)))],
+    );
 }
 
 #[test]
 fn trait_empty() {
     check_output_tree(
         "trait Foo { }",
-        &[Decl {
+        &[Decl::Trait {
             visibility: Visibility::Private,
-            kind: DeclKind::Trait {
-                name: Identifier {
-                    name: "Foo".to_string(),
-                    span: test_span(7, 10),
-                },
-                body: TraitBody { methods: vec![] },
+            name: Identifier {
+                name: "Foo".to_string(),
+                span: test_span(7, 10),
             },
+            body: TraitBody { methods: vec![] },
         }],
     );
 }
@@ -950,43 +923,41 @@ fn trait_empty() {
 fn trait_methods() {
     check_output_tree(
         "trait Foo { fn bar(); fn baz(); }",
-        &[Decl {
+        &[Decl::Trait {
             visibility: Visibility::Private,
-            kind: DeclKind::Trait {
-                name: Identifier {
-                    name: "Foo".to_string(),
-                    span: test_span(7, 10),
-                },
-                body: TraitBody {
-                    methods: vec![
-                        FunctionSignature {
-                            name: Identifier {
-                                name: "bar".to_string(),
-                                span: test_span(16, 19),
-                            },
-                            takes_self: false,
-                            self_precondition: None,
-                            parameters: vec![],
-                            return_type: TypeReference {
-                                kind: TypeReferenceKind::Void,
-                                span: None,
-                            },
+            name: Identifier {
+                name: "Foo".to_string(),
+                span: test_span(7, 10),
+            },
+            body: TraitBody {
+                methods: vec![
+                    FunctionSignature {
+                        name: Identifier {
+                            name: "bar".to_string(),
+                            span: test_span(16, 19),
                         },
-                        FunctionSignature {
-                            name: Identifier {
-                                name: "baz".to_string(),
-                                span: test_span(26, 29),
-                            },
-                            takes_self: false,
-                            self_precondition: None,
-                            parameters: vec![],
-                            return_type: TypeReference {
-                                kind: TypeReferenceKind::Void,
-                                span: None,
-                            },
+                        takes_self: false,
+                        self_precondition: None,
+                        parameters: vec![],
+                        return_type: TypeReference {
+                            kind: TypeReferenceKind::Void,
+                            span: None,
                         },
-                    ],
-                },
+                    },
+                    FunctionSignature {
+                        name: Identifier {
+                            name: "baz".to_string(),
+                            span: test_span(26, 29),
+                        },
+                        takes_self: false,
+                        self_precondition: None,
+                        parameters: vec![],
+                        return_type: TypeReference {
+                            kind: TypeReferenceKind::Void,
+                            span: None,
+                        },
+                    },
+                ],
             },
         }],
     );
@@ -996,37 +967,26 @@ fn trait_methods() {
 fn impl_empty() {
     check_output_tree(
         "impl Foo for Bar { }",
-        &[Decl {
-            visibility: Visibility::Public,
-            kind: DeclKind::Impl {
-                type_name: TypeReference {
-                    kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                        namespace: vec![],
-                        ident: Identifier {
-                            name: "Bar".to_string(),
-                            span: test_span(14, 17),
-                        },
-                    }),
-                    span: Some(test_span(14, 17)),
-                },
-                trait_name: NamespacedIdentifier {
+        &[Decl::Impl {
+            type_name: TypeReference {
+                kind: TypeReferenceKind::Named(NamespacedIdentifier {
                     namespace: vec![],
                     ident: Identifier {
-                        name: "Foo".to_string(),
-                        span: test_span(6, 9),
+                        name: "Bar".to_string(),
+                        span: test_span(14, 17),
                     },
-                },
-                body: vec![],
+                }),
+                span: Some(test_span(14, 17)),
             },
+            trait_name: NamespacedIdentifier {
+                namespace: vec![],
+                ident: Identifier {
+                    name: "Foo".to_string(),
+                    span: test_span(6, 9),
+                },
+            },
+            body: vec![],
         }],
-    );
-}
-
-#[test]
-fn impl_empty_pub() {
-    check_output_errors(
-        "pub impl Foo for Bar { }",
-        &[(ParserError::PubInTraitImpl, Some(test_span(1, 4)))],
     );
 }
 
@@ -1034,45 +994,40 @@ fn impl_empty_pub() {
 fn impl_full() {
     check_output_tree(
         "impl Foo for Bar { fn baz() { } }",
-        &[Decl {
-            visibility: Visibility::Public,
-            kind: DeclKind::Impl {
-                type_name: TypeReference {
-                    kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                        namespace: vec![],
-                        ident: Identifier {
-                            name: "Bar".to_string(),
-                            span: test_span(14, 17),
-                        },
-                    }),
-                    span: Some(test_span(14, 17)),
-                },
-                trait_name: NamespacedIdentifier {
+        &[Decl::Impl {
+            type_name: TypeReference {
+                kind: TypeReferenceKind::Named(NamespacedIdentifier {
                     namespace: vec![],
                     ident: Identifier {
-                        name: "Foo".to_string(),
-                        span: test_span(6, 9),
+                        name: "Bar".to_string(),
+                        span: test_span(14, 17),
+                    },
+                }),
+                span: Some(test_span(14, 17)),
+            },
+            trait_name: NamespacedIdentifier {
+                namespace: vec![],
+                ident: Identifier {
+                    name: "Foo".to_string(),
+                    span: test_span(6, 9),
+                },
+            },
+            body: vec![Function {
+                signature: FunctionSignature {
+                    name: Identifier {
+                        name: "baz".to_string(),
+                        span: test_span(23, 26),
+                    },
+                    takes_self: false,
+                    self_precondition: None,
+                    parameters: vec![],
+                    return_type: TypeReference {
+                        kind: TypeReferenceKind::Void,
+                        span: None,
                     },
                 },
-                body: vec![
-                    Function {
-                        signature: FunctionSignature {
-                            name: Identifier {
-                                name: "baz".to_string(),
-                                span: test_span(23, 26),
-                            },
-                            takes_self: false,
-                            self_precondition: None,
-                            parameters: vec![],
-                            return_type: TypeReference {
-                                kind: TypeReferenceKind::Void,
-                                span: None,
-                            },
-                        },
-                        body: vec![],
-                    }
-                ],
-            },
+                body: vec![],
+            }],
         }],
     );
 }

@@ -9,7 +9,7 @@ use crate::{repr::*, Config, ErrorModule};
 use super::test_span;
 
 fn check_output_stmt(source: &str, expected: Option<Stmt>) {
-    let errors = ErrorModule::new_ref();
+    let errors = ErrorModule::new();
     let config = Config::default();
 
     let unit = Unit::new(
@@ -27,24 +27,16 @@ fn check_output_stmt(source: &str, expected: Option<Stmt>) {
     let output = parser.parse_stmt();
 
     match output {
-        crate::parser::ParserResult::Ok(stmt) => {
-            if expected.is_none() {
-                panic!("Expected no statement, got {:?}", stmt);
-            }
-            assert_eq!(stmt, expected.unwrap());
+        Ok(stmt) => {
+            assert_eq!(stmt, expected);
         }
-        crate::parser::ParserResult::None => {
-            if expected.is_some() {
-                panic!("Expected a statement, got None");
-            }
-        }
-        crate::parser::ParserResult::Err(err, _) => {
+        Err((err, _)) => {
             panic!("Expected a statement, got error: {:?}", err);
         }
     }
 
-    if !errors.lock().unwrap().errors.is_empty() {
-        errors.lock().unwrap().dump(&mut units);
+    if !errors.is_empty() {
+        errors.dump(&mut units);
         panic!("Errors encountered during parsing");
     }
 }

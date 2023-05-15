@@ -1,6 +1,3 @@
-use std::sync::{Arc, Mutex};
-
-use errors::ErrorModuleRef;
 use filters::ParserTokenFilter;
 use repr::BrakionTreeVisitor;
 use unit::{Location, ReadSeek, Unit, UnitIdentifier, Units};
@@ -25,7 +22,7 @@ mod tests;
 pub struct Brakion {
     config: Config,
     units: Units,
-    error_module: ErrorModuleRef,
+    error_module: ErrorModule,
 }
 
 impl Brakion {
@@ -33,7 +30,7 @@ impl Brakion {
         Self {
             config,
             units: Vec::new(),
-            error_module: Arc::new(Mutex::new(ErrorModule::new())),
+            error_module: ErrorModule::new(),
         }
     }
 
@@ -47,11 +44,9 @@ impl Brakion {
             self.process_unit(unit_id);
         }
 
-        let error_module = self.error_module.lock().unwrap();
-
-        if error_module.unrecoverable() {
-            error_module.dump(&mut self.units);
-            Err(error_module.errors())
+        if self.error_module.unrecoverable() {
+            self.error_module.dump(&mut self.units);
+            Err(self.error_module.errors())
         } else {
             Ok(())
         }
@@ -67,15 +62,13 @@ impl Brakion {
 
         let decls = parser.parse();
 
-        let mut unit_module = repr::Decl {
+        let mut unit_module = repr::Decl::Module {
             visibility: repr::Visibility::Public,
-            kind: repr::DeclKind::Module {
-                name: repr::Identifier {
-                    span: unit::Span::new(unit_id, Location::new(1, 0, 1), Location::new(1, 0, 1)),
-                    name: unit_name,
-                },
-                body: decls,
+            name: repr::Identifier {
+                span: unit::Span::new(unit_id, Location::new(1, 0, 1), Location::new(1, 0, 1)),
+                name: unit_name,
             },
+            body: decls,
         };
 
         let mut printer = printer::Printer::new();

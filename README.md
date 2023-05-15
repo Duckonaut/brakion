@@ -361,7 +361,7 @@ impl Clone for B {
 source =
     {declaration | comment}, EOF;
 comment =
-    "#", COMMENT, EOL;
+    "#", COMMENT, (EOL | EOF);
 
 declaration =
     (visibility, (module | function | typeDeclaration | traitDeclaration)) | traitImplementation;

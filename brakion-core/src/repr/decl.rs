@@ -2,30 +2,42 @@ use crate::unit::Span;
 
 use super::{Identifier, NamespacedIdentifier, Stmt};
 
-#[derive(Debug, Hash, PartialEq)]
+#[derive(Debug, Hash, PartialEq, Clone, Copy)]
 pub enum Visibility {
     Public,
     Private,
 }
 
-#[derive(Debug, Hash, PartialEq)]
-pub struct Decl {
-    pub visibility: Visibility,
-    pub kind: DeclKind,
+impl Visibility {
+    pub fn is_public(&self) -> bool {
+        matches!(self, Self::Public)
+    }
+}
+
+impl Default for Visibility {
+    fn default() -> Self {
+        Self::Private
+    }
 }
 
 #[derive(Debug, Hash, PartialEq)]
-pub enum DeclKind {
+pub enum Decl {
     Module {
+        visibility: Visibility,
         name: Identifier,
         body: Vec<Decl>,
     },
-    Function(Function),
+    Function {
+        visibility: Visibility,
+        function: Function,
+    },
     Type {
+        visibility: Visibility,
         name: Identifier,
         body: TypeBody,
     },
     Trait {
+        visibility: Visibility,
         name: Identifier,
         body: TraitBody,
     },
