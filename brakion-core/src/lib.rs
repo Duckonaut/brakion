@@ -15,6 +15,8 @@ pub mod printer;
 pub mod repr;
 pub mod tokens;
 pub mod unit;
+pub mod type_representation;
+pub mod validator;
 
 #[cfg(test)]
 mod tests;

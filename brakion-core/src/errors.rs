@@ -4,10 +4,11 @@ use colored::Colorize;
 
 use crate::unit::Span;
 
-use self::{lexer::LexerError, parser::ParserError};
+use self::{lexer::LexerError, parser::ParserError, validator::ValidatorError};
 
 pub mod lexer;
 pub mod parser;
+pub mod validator;
 
 #[derive(Debug, Clone)]
 pub struct ErrorModule {
@@ -29,6 +30,10 @@ impl ErrorModule {
 
     pub fn add_parser_error(&mut self, kind: ParserError, span: Option<Span>) {
         self.add_error(ErrorKind::ParserError(kind), ErrorLevel::Error, span);
+    }
+
+    pub fn add_validator_error(&mut self, kind: validator::ValidatorError, span: Option<Span>) {
+        self.add_error(ErrorKind::ValidatorError(kind), ErrorLevel::Error, span);
     }
 
     pub fn add_error_if_first(&mut self, kind: ErrorKind, level: ErrorLevel, span: Option<Span>) {
@@ -74,6 +79,7 @@ impl ErrorModule {
         match &error.kind {
             ErrorKind::LexerError(e) => writeln!(f, "{}: {}", "lexer error".red(), e)?,
             ErrorKind::ParserError(e) => writeln!(f, "{}: {}", "parser error".red(), e)?,
+            ErrorKind::ValidatorError(e) => writeln!(f, "{}: {}", "validator error".red(), e)?,
         };
 
         if error.span.is_none() {
@@ -150,6 +156,7 @@ impl Default for ErrorModule {
 pub enum ErrorKind {
     LexerError(LexerError),
     ParserError(ParserError),
+    ValidatorError(ValidatorError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
