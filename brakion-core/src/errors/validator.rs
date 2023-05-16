@@ -6,6 +6,7 @@ use crate::repr::NamespacedIdentifier;
 pub enum ValidatorError {
     TypeMismatch(String, String),
     UnknownType(NamespacedIdentifier),
+    UnknownTrait(NamespacedIdentifier),
 }
 
 impl Display for ValidatorError {
@@ -15,6 +16,7 @@ impl Display for ValidatorError {
                 write!(f, "Expected type {}, found type {}", expected, actual)
             }
             ValidatorError::UnknownType(name) => write!(f, "Unknown type {}", name),
+            ValidatorError::UnknownTrait(name) => write!(f, "Unknown trait {}", name),
         }
     }
 }

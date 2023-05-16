@@ -7,7 +7,7 @@ use crate::parser::Parser;
 use crate::unit::{Location, Span, Unit};
 use crate::{errors, repr::*, Config, ErrorModule};
 
-use super::test_span;
+use crate::tests::test_span;
 
 fn check_output_tree(source: &str, expected: &[Decl]) {
     let errors = ErrorModule::new();

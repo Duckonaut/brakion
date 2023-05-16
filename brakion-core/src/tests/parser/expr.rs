@@ -6,7 +6,7 @@ use crate::parser::Parser;
 use crate::unit::Unit;
 use crate::{repr::*, Config, ErrorModule};
 
-use super::test_span;
+use crate::tests::test_span;
 
 fn check_output_expr(source: &str, expected: Option<Expr>) {
     let errors = ErrorModule::new();

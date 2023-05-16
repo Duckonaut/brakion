@@ -1,4 +1,4 @@
-use crate::{unit::Span, errors::validator::ValidatorError};
+use crate::{errors::validator::ValidatorError, unit::Span};
 
 use super::{Identifier, NamespacedIdentifier, Stmt};
 
@@ -115,54 +115,98 @@ pub enum TypeReferenceKind {
     Union(Vec<TypeReference>),
 }
 
+#[derive(Debug, PartialEq)]
 pub enum NamespaceReference<'a> {
     Decl(&'a Decl),
     TypeVariant(&'a TypeVariant),
 }
 
-pub fn look_up_decl<'a>(decls: &'a [Decl], name: &NamespacedIdentifier) -> Option<NamespaceReference<'a>> {
+pub fn look_up_decl<'a>(
+    decls: &'a [Decl],
+    name: &NamespacedIdentifier,
+) -> Option<NamespaceReference<'a>> {
     if name.namespace.is_empty() {
-        decls.iter().find(|decl| match &decl.kind {
-            DeclKind::Module { name: id, .. } => id.name == name.ident.name,
-            DeclKind::Function(func) => func.signature.name.name == name.ident.name,
-            DeclKind::Type { name: id, .. } => id.name == name.ident.name,
-            DeclKind::Trait { name: id, .. } => id.name == name.ident.name,
-            DeclKind::Impl { .. } => false,
-        }).map(NamespaceReference::Decl)
+        decls
+            .iter()
+            .find(|decl| match decl {
+                Decl::Module { name: id, .. } => id.name == name.ident.name,
+                Decl::Function { function, .. } => function.signature.name.name == name.ident.name,
+                Decl::Type { name: id, .. } => id.name == name.ident.name,
+                Decl::Trait { name: id, .. } => id.name == name.ident.name,
+                Decl::Impl { .. } => false,
+            })
+            .map(NamespaceReference::Decl)
     } else {
         let outer_namespace = &name.namespace.first().unwrap().name;
+        let inner_namespace = &name.namespace[1..];
 
-        decls.iter().find(|decl| match &decl.kind {
-            DeclKind::Module { name: id, .. } => id.name == *outer_namespace,
-            DeclKind::Function(func) => func.signature.name.name == *outer_namespace,
-            DeclKind::Type { name: id, .. } => id.name == *outer_namespace,
-            DeclKind::Trait { name: id, .. } => id.name == *outer_namespace,
-            DeclKind::Impl { .. } => false,
-        }).and_then(|decl| match decl {
-            Decl { kind: DeclKind::Module { body, .. }, .. } => look_up_decl(body, name),
-            Decl { kind: DeclKind::Type { body, .. }, .. } => look_up_type_variant(body, name),
-            _ => None,
-        })
+        decls
+            .iter()
+            .find(|decl| match decl {
+                Decl::Module { name: id, .. } => id.name == *outer_namespace,
+                Decl::Type { name: id, .. } => id.name == *outer_namespace,
+                _ => false,
+            })
+            .and_then(|decl| match decl {
+                Decl::Module { body, .. } => look_up_decl(
+                    body,
+                    &NamespacedIdentifier {
+                        namespace: inner_namespace.to_vec(),
+                        ident: name.ident.clone(),
+                    },
+                ),
+                Decl::Type { body, .. } => {
+                    if !inner_namespace.is_empty() {
+                        return None;
+                    }
+                    look_up_type_variant(
+                        body,
+                        &NamespacedIdentifier {
+                            namespace: inner_namespace.to_vec(),
+                            ident: name.ident.clone(),
+                        },
+                    )
+                }
+                _ => None,
+            })
     }
 }
 
-pub fn look_up_type_variant<'a>(type_body: &'a TypeBody, name: &NamespacedIdentifier) -> Option<NamespaceReference<'a>> {
-    type_body.variants.iter().find(|variant| variant.name.name == name.ident.name).map(NamespaceReference::TypeVariant)
+pub fn look_up_type_variant<'a>(
+    type_body: &'a TypeBody,
+    name: &NamespacedIdentifier,
+) -> Option<NamespaceReference<'a>> {
+    type_body
+        .variants
+        .iter()
+        .find(|variant| variant.name.name == name.ident.name)
+        .map(NamespaceReference::TypeVariant)
 }
 
-pub fn type_implements_trait(decls: &[Decl], type_name: &NamespacedIdentifier, trait_name: &NamespacedIdentifier) -> Result<bool, ValidatorError> {
+pub fn type_implements_trait(
+    decls: &[Decl],
+    type_name: &NamespacedIdentifier,
+    trait_name: &NamespacedIdentifier,
+) -> Result<bool, ValidatorError> {
     let type_decl = match look_up_decl(decls, type_name) {
-        Some(NamespaceReference::Decl(decl)) => decl,
+        Some(NamespaceReference::Decl(decl)) if matches!(decl, Decl::Type { .. }) => decl,
         _ => return Err(ValidatorError::UnknownType(type_name.clone())),
     };
 
     let trait_decl = match look_up_decl(decls, trait_name) {
-        Some(NamespaceReference::Decl(decl)) => decl,
-        _ => return Err(ValidatorError::UnknownType(trait_name.clone())),
+        Some(NamespaceReference::Decl(decl)) if matches!(decl, Decl::Trait { .. }) => decl,
+        _ => return Err(ValidatorError::UnknownTrait(trait_name.clone())),
     };
 
-    match (&type_decl.kind, &trait_decl.kind) {
-        (DeclKind::Type { body: type_body, .. }, DeclKind::Trait { body: trait_body, .. }) => {
+    match (&type_decl, &trait_decl) {
+        (
+            Decl::Type {
+                body: type_body, ..
+            },
+            Decl::Trait {
+                body: trait_body, ..
+            },
+        ) => {
             for trait_method in &trait_body.methods {
                 let type_method = type_body.methods.iter().find(|(vis, func)| {
                     vis == &Visibility::Public && func.signature.name == trait_method.name
@@ -174,7 +218,7 @@ pub fn type_implements_trait(decls: &[Decl], type_name: &NamespacedIdentifier, t
             }
 
             Ok(true)
-        },
+        }
         _ => Err(ValidatorError::UnknownType(type_name.clone())),
     }
 }
@@ -224,12 +268,12 @@ impl TypeReferenceKind {
 
                 match (a_ref, b_ref) {
                     (NamespaceReference::Decl(a_decl), NamespaceReference::Decl(b_decl)) => {
-                        match (&a_decl.kind, &b_decl.kind) {
-                            (DeclKind::Type { .. }, DeclKind::Type { .. }) => Ok(a_decl == b_decl),
-                            (DeclKind::Trait { .. }, DeclKind::Trait { .. }) => Ok(a_decl == b_decl),
-                            (DeclKind::Type { .. }, DeclKind::Trait { .. }) => Ok(false),
-                            (DeclKind::Trait { .. }, DeclKind::Type { .. }) => {
-                                type_implements_trait(decls, a, b)
+                        match (&a_decl, &b_decl) {
+                            (Decl::Type { .. }, Decl::Type { .. }) => Ok(a_decl == b_decl),
+                            (Decl::Trait { .. }, Decl::Trait { .. }) => Ok(a_decl == b_decl),
+                            (Decl::Type { .. }, Decl::Trait { .. }) => Ok(false),
+                            (Decl::Trait { .. }, Decl::Type { .. }) => {
+                                type_implements_trait(decls, b, a)
                             }
                             _ => unreachable!(),
                         }
@@ -239,21 +283,38 @@ impl TypeReferenceKind {
             }
             (Self::List(a), Self::List(b)) => a.kind.is_compatible(&b.kind, decls),
             (Self::Union(a), Self::Union(b)) => {
-                todo!()
-            }
-            (Self::Union(a), Self::List(b)) => {
-                todo!()
-            }
-            (Self::Union(a), Self::Void) => {
                 for a in a.iter() {
-                    if a.kind.is_compatible(&TypeReferenceKind::Void, decls)? {
-                        return Ok(true);
+                    let mut exactly_one = false;
+                    for b in b.iter() {
+                        if a.kind.is_compatible(&b.kind, decls)? {
+                            if exactly_one {
+                                return Ok(false);
+                            } else {
+                                exactly_one = true;
+                            }
+                        }
+                    }
+
+                    if !exactly_one {
+                        return Ok(false);
                     }
                 }
-                Ok(false)
+
+                Ok(true)
             }
-            (Self::Union(a), Self::Named(b)) => {
-                todo!()
+            (Self::Union(a), b) => {
+                let mut exactly_one = false;
+                for a in a.iter() {
+                    if a.kind.is_compatible(b, decls)? {
+                        if exactly_one {
+                            return Ok(false);
+                        } else {
+                            exactly_one = true;
+                        }
+                    }
+                }
+
+                Ok(exactly_one)
             }
             _ => Ok(false),
         }

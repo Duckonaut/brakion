@@ -1,15 +1,15 @@
 use crate::{
-    errors::{validator::ValidatorError, ErrorModuleRef},
+    errors::{validator::ValidatorError, ErrorModule},
     repr::{BrakionTreeVisitor, Decl, Expr, Stmt, TypeReference, TypeReferenceKind},
     unit::Span,
 };
 
 pub struct Validator {
-    error_module: ErrorModuleRef,
+    error_module: ErrorModule,
 }
 
 impl Validator {
-    pub fn new(error_module: ErrorModuleRef) -> Self {
+    pub fn new(error_module: ErrorModule) -> Self {
         Self { error_module }
     }
 
@@ -19,8 +19,6 @@ impl Validator {
 
             if let Err(err) = result {
                 self.error_module
-                    .lock()
-                    .unwrap()
                     .add_validator_error(err.0, err.1);
             }
         }
