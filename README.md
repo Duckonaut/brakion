@@ -361,14 +361,14 @@ impl Clone for B {
 source =
     {declaration | comment}, EOF;
 comment =
-    "#", COMMENT, EOL;
+    "#", COMMENT, (EOL | EOF);
 
 declaration =
     (visibility, (module | function | typeDeclaration | traitDeclaration)) | traitImplementation;
 module =
     "mod", IDENTIFIER, "{", {declaration}, "}";
 function =
-    executableBlock;
+    functionSignature, executableBlock;
 typeDeclaration =
     "type", IDENTIFIER, ( typeDefinition | ";" );
 traitDeclaration =
@@ -407,14 +407,14 @@ executableBlock =
     "{", {statement} "}";
 
 statement =
-    varStmt | forStmt | ifStmt | returnStmt | whileStmt | matchStmt | breakStmt | continueStmt | executableBlock | assignmentStmt;
+    varStmt | forStmt | ifStmt | returnStmt | whileStmt | matchStmt | breakStmt | continueStmt | executableBlock | assignmentOrExprStmt;
 
-assignmentStmt =
-    expression, "=", expression;
+assignmentOrExprStmt =
+    expression, ["=", expression], ";";
 varStmt =
-    "var", typedIdentifier, "=", expression;
+    "var", typedIdentifier, "=", expression, ";";
 forStmt =
-    "for", IDENTIFIER, "in", expression, executableBlock;
+    "for", IDENTIFIER, "in", expression, statement;
 ifStmt =
     "if", expression, statement, ["else", statement];
 returnStmt =
@@ -438,28 +438,26 @@ elseCase =
 
 expression = logicOr;
 
-logicOr = logicAnd, ["or", logicAnd];
-logicAnd = equality, ["and", equality];
-equality = typeIs, [("==" | "!="), typeIs];
-typeIs = comparison, ["is", comparison];
-comparison = term, [(">" | ">=" | "<" | "<="), term];
-term = factor, [("-" | "+"), factor];
-factor = cast, [("/" | "*"), cast];
-cast = unary, ["as", type];
+logicOr = logicAnd, {"or", logicAnd};
+logicAnd = equality, {"and", equality};
+equality = typeIs, {("==" | "!="), typeIs};
+typeIs = comparison, {"is", comparison};
+comparison = term, {(">" | ">=" | "<" | "<="), term};
+term = factor, {("-" | "+"), factor};
+factor = cast, {("/" | "*"), cast};
+cast = unary, {"as", type};
 unary = {"!" | "-"}, primary;
 
 arguments =
     expression, {",", expression}, [","];
 
-fieldAccess = primary, ; // WEIRD SHIT
-
 call = "(", [arguments], ")";
 listAccess = "[", expression, "]";
 fieldAccess = ".", IDENTIFIER;
-coalesceAccess = "?", type;
 
 accessOrConstructorOrCallOrListAccessOrFieldAccess =
     namespacedIdentifier, [
+        "->",
         "{",
         [
             fieldConstructor,
@@ -485,7 +483,7 @@ listInitializer =
 primary = ("(", expression, ")") | literal | accessOrConstructorOrCallOrListAccessOrFieldAccess;
 
 literal =
-    "true" | "false" | "void" | "self" | listInitializer |
+    "true" | "false" | "void" | listInitializer |
     NUMBER | STRING | CHAR;
 
 NUMBER =

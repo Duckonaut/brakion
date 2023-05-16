@@ -72,6 +72,8 @@ pub enum TokenKind {
     Var,
     And,
     Or,
+    Is,
+    As,
     For,
     In,
     If,
@@ -85,6 +87,7 @@ pub enum TokenKind {
     True,
     False,
     Void,
+    Self_,
 
     Eof,
     Comment(String),
@@ -133,6 +136,8 @@ impl Display for TokenKind {
             TokenKind::Var => write!(f, "var"),
             TokenKind::And => write!(f, "and"),
             TokenKind::Or => write!(f, "or"),
+            TokenKind::Is => write!(f, "is"),
+            TokenKind::As => write!(f, "as"),
             TokenKind::For => write!(f, "for"),
             TokenKind::In => write!(f, "in"),
             TokenKind::If => write!(f, "if"),
@@ -146,6 +151,7 @@ impl Display for TokenKind {
             TokenKind::True => write!(f, "true"),
             TokenKind::False => write!(f, "false"),
             TokenKind::Void => write!(f, "void"),
+            TokenKind::Self_ => write!(f, "self"),
             TokenKind::Eof => write!(f, "EOF"),
             TokenKind::Comment(s) => write!(f, "#{s}"),
         }

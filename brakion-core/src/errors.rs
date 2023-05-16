@@ -1,37 +1,38 @@
+use std::sync::{Mutex, Arc};
+
 use colored::Colorize;
 
 use crate::unit::Span;
 
-use self::lexer::LexerError;
+use self::{lexer::LexerError, parser::ParserError};
 
 pub mod lexer;
+pub mod parser;
 
-pub type ErrorModuleRef = std::sync::Arc<std::sync::Mutex<ErrorModule>>;
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ErrorModule {
-    pub errors: Vec<Error>,
+    pub errors: Arc<Mutex<Vec<Error>>>,
 }
 
 impl ErrorModule {
     pub fn new() -> Self {
-        Self { errors: Vec::new() }
-    }
-
-    pub fn new_ref() -> ErrorModuleRef {
-        std::sync::Arc::new(std::sync::Mutex::new(Self::new()))
+        Self { errors: Arc::new(Mutex::new(Vec::new())) }
     }
 
     pub fn add_error(&mut self, kind: ErrorKind, level: ErrorLevel, span: Option<Span>) {
-        self.errors.push(Error { kind, level, span });
+        self.errors.lock().unwrap().push(Error { kind, level, span });
     }
 
     pub fn add_lexer_error(&mut self, kind: LexerError, span: Option<Span>) {
         self.add_error(ErrorKind::LexerError(kind), ErrorLevel::Error, span);
     }
 
+    pub fn add_parser_error(&mut self, kind: ParserError, span: Option<Span>) {
+        self.add_error(ErrorKind::ParserError(kind), ErrorLevel::Error, span);
+    }
+
     pub fn add_error_if_first(&mut self, kind: ErrorKind, level: ErrorLevel, span: Option<Span>) {
-        if !self.errors.iter().any(|e| e.kind == kind) {
+        if !self.errors.lock().unwrap().iter().any(|e| e.kind == kind) {
             self.add_error(kind, level, span);
         }
     }
@@ -40,18 +41,26 @@ impl ErrorModule {
         self.add_error_if_first(ErrorKind::LexerError(kind), ErrorLevel::Error, span);
     }
 
+    pub fn add_parser_error_if_first(&mut self, kind: ParserError, span: Option<Span>) {
+        self.add_error_if_first(ErrorKind::ParserError(kind), ErrorLevel::Error, span);
+    }
+
     pub fn unrecoverable(&self) -> bool {
-        self.errors.iter().any(|e| e.level == ErrorLevel::Error)
+        self.errors.lock().unwrap().iter().any(|e| e.level == ErrorLevel::Error)
     }
 
     pub fn errors(&self) -> Vec<Error> {
-        self.errors.clone()
+        self.errors.lock().unwrap().clone()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.errors.lock().unwrap().is_empty()
     }
 
     pub fn dump(&self, units: &mut crate::unit::Units) {
         let mut sink = std::io::stderr().lock();
 
-        for error in &self.errors {
+        for error in self.errors.lock().unwrap().iter() {
             self.print_error(&mut sink, error, units).unwrap();
         }
     }
@@ -64,6 +73,7 @@ impl ErrorModule {
     ) -> std::io::Result<()> {
         match &error.kind {
             ErrorKind::LexerError(e) => writeln!(f, "{}: {}", "lexer error".red(), e)?,
+            ErrorKind::ParserError(e) => writeln!(f, "{}: {}", "parser error".red(), e)?,
         };
 
         if error.span.is_none() {
@@ -136,9 +146,10 @@ impl Default for ErrorModule {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ErrorKind {
     LexerError(LexerError),
+    ParserError(ParserError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

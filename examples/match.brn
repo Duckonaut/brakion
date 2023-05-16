@@ -42,7 +42,7 @@ type Tristate {
 }
 
 fn main(args: [str]) -> i32 {
-    var foo = Foo { a: 1, b: 2, c: 3.0, d: 4.0 };
+    var foo: Foo = Foo -> { a: 1, b: 2, c: 3.0, d: 4.0 };
 
     std::io::println("{}", foo.foo());
 }

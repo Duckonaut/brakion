@@ -19,7 +19,7 @@ fn compare_token_slice_kinds(a: &[Token], b: &[TokenKind]) {
 }
 
 fn check_output_token_kinds(source: &str, expected: &[TokenKind]) {
-    let errors = ErrorModule::new_ref();
+    let errors = ErrorModule::new();
     let config = Config::default();
 
     let unit = Unit::new(
@@ -38,8 +38,8 @@ fn check_output_token_kinds(source: &str, expected: &[TokenKind]) {
         tokens.push(token);
     }
 
-    if !errors.lock().unwrap().errors.is_empty() {
-        errors.lock().unwrap().dump(&mut units);
+    if !errors.is_empty() {
+        errors.dump(&mut units);
         panic!("Lexer produced errors");
     }
 
@@ -47,7 +47,7 @@ fn check_output_token_kinds(source: &str, expected: &[TokenKind]) {
 }
 
 fn check_output_token_span_positions(source: &str, expected: &[(usize, usize, usize, usize)]) {
-    let errors = ErrorModule::new_ref();
+    let errors = ErrorModule::new();
     let config = Config::default();
 
     let unit = Unit::new(
@@ -66,8 +66,8 @@ fn check_output_token_span_positions(source: &str, expected: &[(usize, usize, us
         tokens.push(token);
     }
 
-    if !errors.lock().unwrap().errors.is_empty() {
-        errors.lock().unwrap().dump(&mut units);
+    if !errors.is_empty() {
+        errors.dump(&mut units);
         panic!("Lexer produced errors");
     }
 
@@ -85,7 +85,7 @@ fn check_output_token_kinds_with_errors(
     source: &str,
     expected: &[TokenKind],
 ) -> Vec<crate::errors::Error> {
-    let errors = ErrorModule::new_ref();
+    let errors = ErrorModule::new();
     let config = Config::default();
 
     let mut unit = Unit::new(
@@ -104,12 +104,11 @@ fn check_output_token_kinds_with_errors(
 
     compare_token_slice_kinds(&tokens, expected);
 
-    let err = errors.lock().unwrap().errors.clone();
-    err
+    errors.errors()
 }
 
 #[test]
-fn test_lexer_empty() {
+fn empty() {
     let source = "";
 
     let expected = vec![TokenKind::Eof];
@@ -118,7 +117,7 @@ fn test_lexer_empty() {
 }
 
 #[test]
-fn test_lexer_hello_world() {
+fn hello_world() {
     let source = "fn main() {
         std::io::println(\"Hello, world!\");
     }";
@@ -146,7 +145,7 @@ fn test_lexer_hello_world() {
 }
 
 #[test]
-fn test_lexer_simples() {
+fn simples() {
     let source = "(){}[],.+;/*|?:-::->!<<==>=>!===";
 
     let source_with_spaces = "( ) { } [ ] , . + ; / * | ? : - :: -> ! < <= = >= > != ==";
@@ -186,7 +185,7 @@ fn test_lexer_simples() {
 }
 
 #[test]
-fn test_lexer_numbers_short() {
+fn numbers_short() {
     let source = "123 123456 123.456 0.123 0.12345 12345.0";
 
     let expected = vec![
@@ -203,7 +202,7 @@ fn test_lexer_numbers_short() {
 }
 
 #[test]
-fn test_lexer_integer_bounds() {
+fn integer_bounds() {
     let mut source = "".to_string();
     source += &std::u8::MAX.to_string();
     source += " ";
@@ -227,7 +226,7 @@ fn test_lexer_integer_bounds() {
 }
 
 #[test]
-fn test_lexer_float_bounds() {
+fn float_bounds() {
     let mut source = "".to_string();
     // Force to use decimal point, otherwise the Display impl
     // will round stuff.
@@ -250,7 +249,7 @@ fn test_lexer_float_bounds() {
 }
 
 #[test]
-fn test_lexer_integer_too_long() {
+fn integer_too_long() {
     let mut source = String::new();
 
     for _ in 0..2048 {
@@ -269,7 +268,7 @@ fn test_lexer_integer_too_long() {
 }
 
 #[test]
-fn test_lexer_float_too_long() {
+fn float_too_long() {
     let mut source = "0.".to_string();
 
     for _ in 0..2048 {
@@ -288,7 +287,7 @@ fn test_lexer_float_too_long() {
 }
 
 #[test]
-fn test_lexer_strings() {
+fn strings() {
     let source = "\"Hello, world!\" \"Hello,\\n world!\" \"Hello,\\\" world!\"";
 
     let expected = vec![
@@ -302,7 +301,7 @@ fn test_lexer_strings() {
 }
 
 #[test]
-fn test_lexer_multiline_string() {
+fn multiline_string() {
     let source = "\"Hello, \nworld!\"";
 
     let expected = vec![
@@ -328,7 +327,7 @@ fn test_lexer_multiline_string() {
 }
 
 #[test]
-fn test_lexer_string_invalid_escapes() {
+fn string_invalid_escapes() {
     let source = "\"\\a\" \"\\b\" \"\\c\" \"\\n\" \"\\g\"";
 
     let expected = vec![
@@ -362,7 +361,7 @@ fn test_lexer_string_invalid_escapes() {
 }
 
 #[test]
-fn test_lexer_string_abrupt_termination() {
+fn string_abrupt_termination() {
     let source = "\"Hello, world!";
 
     let expected = vec![];
@@ -377,7 +376,7 @@ fn test_lexer_string_abrupt_termination() {
 }
 
 #[test]
-fn test_lexer_string_abrupt_escape_termination() {
+fn string_abrupt_escape_termination() {
     let source = "\"abc\\";
 
     let expected = vec![];
@@ -392,7 +391,7 @@ fn test_lexer_string_abrupt_escape_termination() {
 }
 
 #[test]
-fn test_lexer_string_empty() {
+fn string_empty() {
     let source = "\"\"";
 
     let expected = vec![TokenKind::String("".to_string()), TokenKind::Eof];
@@ -401,7 +400,7 @@ fn test_lexer_string_empty() {
 }
 
 #[test]
-fn test_lexer_string_too_long() {
+fn string_too_long() {
     let mut source = "\"".to_string();
     for _ in 0..(std::u16::MAX as usize) {
         source += "a";
@@ -420,7 +419,7 @@ fn test_lexer_string_too_long() {
 }
 
 #[test]
-fn test_lexer_chars() {
+fn chars() {
     let source = "'a' '🙂' '\\n' '\\'' '\\\\' '\\t' '\\r' '\\0'";
 
     let expected = vec![
@@ -439,7 +438,7 @@ fn test_lexer_chars() {
 }
 
 #[test]
-fn test_lexer_empty_char() {
+fn empty_char() {
     let source = "''";
 
     let expected = vec![TokenKind::Eof];
@@ -454,7 +453,7 @@ fn test_lexer_empty_char() {
 }
 
 #[test]
-fn test_lexer_char_invalid_escapes() {
+fn char_invalid_escapes() {
     let source = "'\\a' '\\b' '\\c' '\\n' '\\g'";
 
     let expected = vec![TokenKind::Char('\n'), TokenKind::Eof];
@@ -481,7 +480,7 @@ fn test_lexer_char_invalid_escapes() {
 }
 
 #[test]
-fn test_lexer_char_abrupt_termination() {
+fn char_abrupt_termination() {
     let source = "'a";
 
     let expected = vec![];
@@ -496,7 +495,7 @@ fn test_lexer_char_abrupt_termination() {
 }
 
 #[test]
-fn test_lexer_char_no_char() {
+fn char_no_char() {
     let source = "'";
 
     let expected = vec![];
@@ -511,7 +510,7 @@ fn test_lexer_char_no_char() {
 }
 
 #[test]
-fn test_lexer_char_abrupt_escape_termination() {
+fn char_abrupt_escape_termination() {
     let source = "'\\";
 
     let expected = vec![];
@@ -526,7 +525,7 @@ fn test_lexer_char_abrupt_escape_termination() {
 }
 
 #[test]
-fn test_lexer_char_not_one_char() {
+fn char_not_one_char() {
     let source = "'ab'";
 
     let expected = vec![];
@@ -541,7 +540,7 @@ fn test_lexer_char_not_one_char() {
 }
 
 #[test]
-fn test_lexer_char_too_long() {
+fn char_too_long() {
     let mut source = "'".to_string();
 
     for _ in 0..(std::u16::MAX as usize) {
@@ -562,8 +561,8 @@ fn test_lexer_char_too_long() {
 }
 
 #[test]
-fn test_lexer_keywords() {
-    let source = "pub mod fn type trait impl var and or for in if else match on while break continue return true false void";
+fn keywords() {
+    let source = "pub mod fn type trait impl var and or is as for in if else match on while break continue return true false void self";
 
     let expected = vec![
         TokenKind::Pub,
@@ -575,6 +574,8 @@ fn test_lexer_keywords() {
         TokenKind::Var,
         TokenKind::And,
         TokenKind::Or,
+        TokenKind::Is,
+        TokenKind::As,
         TokenKind::For,
         TokenKind::In,
         TokenKind::If,
@@ -588,6 +589,7 @@ fn test_lexer_keywords() {
         TokenKind::True,
         TokenKind::False,
         TokenKind::Void,
+        TokenKind::Self_,
         TokenKind::Eof,
     ];
 
@@ -595,11 +597,11 @@ fn test_lexer_keywords() {
 }
 
 #[test]
-fn test_lexer_identifiers() {
+fn identifiers() {
     let source = "self a b abc a_b _a _abc ___abc Abc aBC _ABC ą _ą _Ą ł _ _0 _a0 a0";
 
     let expected = vec![
-        TokenKind::Identifier("self".to_string()),
+        TokenKind::Self_,
         TokenKind::Identifier("a".to_string()),
         TokenKind::Identifier("b".to_string()),
         TokenKind::Identifier("abc".to_string()),
@@ -625,7 +627,7 @@ fn test_lexer_identifiers() {
 }
 
 #[test]
-fn test_lexer_identifiers_with_keywords() {
+fn identifiers_with_keywords() {
     let source = "pub puba apub apuba _pub pub_ forward before";
 
     let expected = vec![
@@ -644,7 +646,7 @@ fn test_lexer_identifiers_with_keywords() {
 }
 
 #[test]
-fn test_lexer_identifier_too_long() {
+fn identifier_too_long() {
     let mut source = "a".to_string();
 
     for _ in 0..(std::u16::MAX as usize) {
@@ -663,7 +665,7 @@ fn test_lexer_identifier_too_long() {
 }
 
 #[test]
-fn test_lexer_comments() {
+fn comments() {
     let source = "# Comment at start\n # Comment ater line break \n  # Comment with a # in it\nidentifier # Comment on non-empty line \n# Comment at end";
 
     let expected_raw = vec![
@@ -680,7 +682,7 @@ fn test_lexer_comments() {
 }
 
 #[test]
-fn test_lexer_comments_filter() {
+fn comments_filter() {
     let source = "# Comment at start\n # Comment ater line break \n  # Comment with a # in it\nidentifier # Comment on non-empty line \n# Comment at end";
 
     let expected = vec![
@@ -690,7 +692,7 @@ fn test_lexer_comments_filter() {
 
     // Inlined from check_output_tokens with filter
 
-    let errors = ErrorModule::new_ref();
+    let errors = ErrorModule::new();
     let config = Config::default();
 
     let unit = Unit::new(
@@ -711,8 +713,8 @@ fn test_lexer_comments_filter() {
         tokens.push(token);
     }
 
-    if !errors.lock().unwrap().errors.is_empty() {
-        errors.lock().unwrap().dump(&mut units);
+    if !errors.is_empty() {
+        errors.dump(&mut units);
         panic!("Lexer produced errors");
     }
 
@@ -720,7 +722,7 @@ fn test_lexer_comments_filter() {
 }
 
 #[test]
-fn test_line_ending_mix() {
+fn line_ending_mix() {
     let source_lf = "a\nb\r\nc\rd\n\re";
     let source_cr = "a\rb\nc\r\nd\n\re";
     let source_crlf = "a\r\nb\nc\rd\n\re";
@@ -838,7 +840,7 @@ fn test_line_ending_mix() {
 
 // Produce only one error (of a kind) per file, not for every bad line ending
 #[test]
-fn test_line_ending_mix_amount() {
+fn line_ending_mix_amount() {
     let source_lf = "a\nb\r\nc\r\nd";
     let source_cr = "a\rb\nc\nd";
     let source_crlf = "a\r\nb\nc\nd";
@@ -898,7 +900,7 @@ fn test_line_ending_mix_amount() {
 }
 
 #[test]
-fn test_bad_chars() {
+fn bad_chars() {
     let source = "a b$c";
 
     let expected = vec![

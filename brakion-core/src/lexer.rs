@@ -1,13 +1,13 @@
 use crate::config::Config;
 use crate::errors::lexer::LexerError;
-use crate::errors::ErrorModuleRef;
-use crate::line_endings::LINE_ENDING;
 use crate::line_endings::LineEndingStyle;
+use crate::line_endings::LINE_ENDING;
 use crate::tokens::Token;
 use crate::tokens::TokenKind;
 use crate::unit::Location;
 use crate::unit::Span;
 use crate::unit::Unit;
+use crate::ErrorModule;
 
 // Macro for trying to match with multiple functions
 // If a function returns a token, the token is returned
@@ -38,7 +38,7 @@ pub struct Lexer<'a> {
     // Refs to other modules
     config: &'a Config,
     unit: &'a mut Unit,
-    error_module: ErrorModuleRef,
+    error_module: ErrorModule,
     // Current character
     current: Option<char>,
     // Positioning
@@ -64,7 +64,7 @@ enum TokenizeResult {
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(unit: &'a mut Unit, config: &'a Config, error_module: ErrorModuleRef) -> Self {
+    pub fn new(unit: &'a mut Unit, config: &'a Config, error_module: ErrorModule) -> Self {
         let current = unit.read();
         Self {
             config,
@@ -98,10 +98,7 @@ impl<'a> Lexer<'a> {
             TokenizeResult::Some(token) => Some(token),
             TokenizeResult::Error(error) => {
                 let fatal = error.is_fatal();
-                self.error_module
-                    .lock()
-                    .unwrap()
-                    .add_lexer_error(error, self.span());
+                self.error_module.add_lexer_error(error, self.span());
 
                 if fatal {
                     None
@@ -115,8 +112,6 @@ impl<'a> Lexer<'a> {
                     self.advance();
 
                     self.error_module
-                        .lock()
-                        .unwrap()
                         .add_lexer_error(LexerError::UnexpectedCharacter(c), self.span());
 
                     // Try to recover, should be able to skip the unexpected character?
@@ -235,7 +230,7 @@ impl<'a> Lexer<'a> {
                         error_span.start.line = error_span.end.line;
                         error_span.start.column = error_span.end.column - 1;
 
-                        self.error_module.lock().unwrap().add_lexer_error(
+                        self.error_module.add_lexer_error(
                             LexerError::InvalidEscapeSequence(self.current.unwrap()),
                             Some(error_span),
                         );
@@ -440,6 +435,8 @@ impl<'a> Lexer<'a> {
             "var" => TokenKind::Var,
             "and" => TokenKind::And,
             "or" => TokenKind::Or,
+            "is" => TokenKind::Is,
+            "as" => TokenKind::As,
             "for" => TokenKind::For,
             "in" => TokenKind::In,
             "if" => TokenKind::If,
@@ -453,6 +450,7 @@ impl<'a> Lexer<'a> {
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             "void" => TokenKind::Void,
+            "self" => TokenKind::Self_,
             _ => TokenKind::Identifier(text.to_string()),
         };
         TokenizeResult::Some(Token::new(kind, self.span()))
@@ -465,7 +463,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn signal_inconsistent_line_ending(&mut self, encountered: LineEndingStyle) {
-        self.error_module.lock().unwrap().add_lexer_error_if_first(
+        self.error_module.add_lexer_error_if_first(
             LexerError::InconsistentLineEndings(self.line_ending_style, encountered),
             None,
         );

@@ -3,6 +3,7 @@ pub struct Config {
     pub max_string_length: usize,
     pub max_identifier_length: usize,
     pub max_number_length: usize,
+    pub max_function_arguments: usize,
 }
 
 impl Default for Config {
@@ -11,6 +12,7 @@ impl Default for Config {
             max_string_length: 4096,
             max_identifier_length: 1024,
             max_number_length: 1024,
+            max_function_arguments: 256,
         }
     }
 }

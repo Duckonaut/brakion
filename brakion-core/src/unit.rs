@@ -1,16 +1,12 @@
-use std::{
-    fmt::Display,
-    hash::Hash,
-    io::{Read, Seek},
-};
+use std::{fmt::Display, hash::Hash, io::{Read, Seek}};
 
 pub(crate) const READ_INCREMENT: usize = 0x1000; // 4 KiB, default Linux page size
 
-pub trait ReadSeek: Read + Seek {} // Helper trait to allow for dynamic dispatch
-impl<T: Read + Seek> ReadSeek for T {}
-
 pub type UnitIdentifier = usize; // Key into the `units` map
 pub type Units = Vec<Unit>;
+
+pub trait ReadSeek: Read + Seek {}
+impl<T> ReadSeek for T where T: Read + Seek {}
 
 /// A unit is a source file that is being compiled.
 /// It is a wrapper around a `Read`-implementing struct that provides
@@ -18,12 +14,9 @@ pub type Units = Vec<Unit>;
 pub struct Unit {
     pub name: String,
     pub id: UnitIdentifier, // Kept here for convenience
-    code: String,
-    code_len_bytes: usize,
-    source: Box<dyn ReadSeek>,
+    reader: utf8_read::Reader<Box<dyn ReadSeek>>,
     is_at_end: bool,
     read_pos_bytes: usize,
-    debt: usize,
 }
 
 impl std::fmt::Debug for Unit {
@@ -31,12 +24,9 @@ impl std::fmt::Debug for Unit {
         f.debug_struct("Unit")
             .field("name", &self.name)
             .field("id", &self.id)
-            .field("code", &self.code)
-            .field("code_len", &self.code_len_bytes)
-            .field("source", &"Box<dyn Read>")
+            .field("reader", &"utf8_read::Reader")
             .field("is_at_end", &self.is_at_end)
             .field("read_pos_bytes", &self.read_pos_bytes)
-            .field("debt", &self.debt)
             .finish()
     }
 }
@@ -46,12 +36,9 @@ impl Unit {
         Self {
             name,
             id,
-            code: String::new(),
-            code_len_bytes: 0,
-            source,
+            reader: utf8_read::Reader::new(source),
             is_at_end: false,
             read_pos_bytes: 0,
-            debt: 0,
         }
     }
 
@@ -72,78 +59,19 @@ impl Unit {
             return None;
         }
 
-        if self.read_pos_bytes >= self.code_len_bytes && self.advance_buffer() == 0 {
-            return None;
-        }
+        let c = match self.reader.next_char() {
+            Ok(c) => match c {
+                utf8_read::Char::Eof | utf8_read::Char::NoData => {
+                    self.is_at_end = true;
+                    return None;
+                }
+                utf8_read::Char::Char(c) => c,
+            },
+            Err(e) => panic!("Error reading from source: {}", e),
+        };
 
-        let c = self
-            .code
-            .get(self.read_pos_bytes..)
-            .unwrap() // Safe because we checked that the buffer is not empty
-            .chars()
-            .next()
-            .unwrap(); // Safe because we checked that the buffer is utf8 and not empty
         self.read_pos_bytes += c.len_utf8(); // Move to next character
         Some(c)
-    }
-
-    fn advance_buffer(&mut self) -> usize {
-        let source = &mut self.source;
-        let mut buffer = [0; READ_INCREMENT];
-
-        if self.debt > 0 {
-            source
-                .seek(std::io::SeekFrom::Current(-(self.debt as i64)))
-                .unwrap();
-
-            self.debt = 0;
-        }
-
-        let read = source.read(&mut buffer).unwrap();
-        if read == 0 {
-            self.is_at_end = true;
-            return 0;
-        }
-
-        let (decoded, debt) = Self::utf8_safe_read(&buffer[..read], &mut *source);
-        self.code.clear();
-        self.read_pos_bytes = 0;
-
-        self.code.push_str(decoded);
-        self.code_len_bytes = self.code.len();
-        self.debt = debt;
-        read
-    }
-
-    // Returns up to `N` characters from the source code, and the debt amount. If at the end of
-    // source code, panics. TODO: Maybe not panic?
-    fn utf8_safe_read<'a>(buffer: &'a [u8], source: &mut dyn ReadSeek) -> (&'a str, usize) {
-        match std::str::from_utf8(buffer) {
-            Ok(s) => (s, 0),
-            Err(e) => match e.error_len() {
-                // panic if invalid utf8 in the middle of the file
-                Some(_) => panic!("Invalid UTF-8 sequence in source code"),
-                None => {
-                    let current_pos = source.stream_position().unwrap();
-
-                    let end_pos = source.seek(std::io::SeekFrom::End(0)).unwrap();
-
-                    let source_has_anything_left = current_pos < end_pos;
-
-                    // Restore the position of the source
-                    source.seek(std::io::SeekFrom::Start(current_pos)).unwrap();
-
-                    if !source_has_anything_left {
-                        panic!("Invalid UTF-8 sequence at end of file");
-                    }
-
-                    (
-                        std::str::from_utf8(&buffer[..e.valid_up_to()]).unwrap(),
-                        buffer.len() - e.valid_up_to(),
-                    )
-                }
-            },
-        }
     }
 
     pub fn lines(&mut self, span: &Span) -> Vec<String> {
@@ -158,7 +86,7 @@ impl Unit {
 
         let mut lines = String::new();
 
-        let source = &mut self.source;
+        let source = &mut self.reader.borrow_mut();
         let original_pos = source.stream_position().unwrap();
 
         source
@@ -225,6 +153,37 @@ impl Unit {
             .map(|s| s.to_string())
             .collect::<Vec<String>>()
     }
+
+    /// Returns up to `N` characters from the source code, and the debt amount. If at the end of
+    /// source code, panics. TODO: Maybe not panic?
+    fn utf8_safe_read<'a>(buffer: &'a [u8], source: &mut dyn ReadSeek) -> (&'a str, usize) {
+        match std::str::from_utf8(buffer) {
+            Ok(s) => (s, 0),
+            Err(e) => match e.error_len() {
+                // panic if invalid utf8 in the middle of the file
+                Some(_) => panic!("Invalid UTF-8 sequence in source code"),
+                None => {
+                    let current_pos = source.stream_position().unwrap();
+
+                    let end_pos = source.seek(std::io::SeekFrom::End(0)).unwrap();
+
+                    let source_has_anything_left = current_pos < end_pos;
+
+                    // Restore the position of the source
+                    source.seek(std::io::SeekFrom::Start(current_pos)).unwrap();
+
+                    if !source_has_anything_left {
+                        panic!("Invalid UTF-8 sequence at end of file");
+                    }
+
+                    (
+                        std::str::from_utf8(&buffer[..e.valid_up_to()]).unwrap(),
+                        buffer.len() - e.valid_up_to(),
+                    )
+                }
+            },
+        }
+    }
 }
 
 impl PartialEq for Unit {
@@ -253,6 +212,7 @@ impl Span {
 
     pub fn from_spans(start: Span, end: Span) -> Self {
         assert_eq!(start.unit, end.unit);
+        assert!(start.start <= end.end);
 
         Self {
             unit: start.unit,
