@@ -49,7 +49,10 @@ impl ParserError {
 impl Display for ParserError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParserError::InvalidStart => write!(f, "Invalid start of rule"),
+            ParserError::InvalidStart => write!(
+                f,
+                "Invalid start of rule. This error should never be shown! Report this as a bug"
+            ),
             ParserError::UnexpectedEof => write!(f, "Unexpected end of file"),
             ParserError::ExpectedDecl => {
                 write!(f, "Expected a module, function, type or trait declaration")

@@ -8,7 +8,7 @@ use crate::{errors::ErrorModule, Config};
 /// Macro for trying to get a match from a list of functions
 /// If a function returns a value, the token is returned
 /// If a function returns an error, the error is returned
-/// If a function returns None, the next function is tried
+/// If a function returns the `InvalidStart` error, the next function is tried
 macro_rules! alternatives {
     () => {
         Err((ParserError::InvalidStart, None))
