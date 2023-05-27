@@ -968,15 +968,12 @@ fn impl_empty() {
     check_output_tree(
         "impl Foo for Bar { }",
         &[Decl::Impl {
-            type_name: TypeReference {
-                kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                    namespace: vec![],
-                    ident: Identifier {
-                        name: "Bar".to_string(),
-                        span: test_span(14, 17),
-                    },
-                }),
-                span: Some(test_span(14, 17)),
+            type_name: NamespacedIdentifier {
+                namespace: vec![],
+                ident: Identifier {
+                    name: "Bar".to_string(),
+                    span: test_span(14, 17),
+                },
             },
             trait_name: NamespacedIdentifier {
                 namespace: vec![],
@@ -995,15 +992,12 @@ fn impl_full() {
     check_output_tree(
         "impl Foo for Bar { fn baz() { } }",
         &[Decl::Impl {
-            type_name: TypeReference {
-                kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                    namespace: vec![],
-                    ident: Identifier {
-                        name: "Bar".to_string(),
-                        span: test_span(14, 17),
-                    },
-                }),
-                span: Some(test_span(14, 17)),
+            type_name: NamespacedIdentifier {
+                namespace: vec![],
+                ident: Identifier {
+                    name: "Bar".to_string(),
+                    span: test_span(14, 17),
+                },
             },
             trait_name: NamespacedIdentifier {
                 namespace: vec![],

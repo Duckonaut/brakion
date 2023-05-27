@@ -170,7 +170,7 @@ where
 
         self.consume_token(TokenKind::For, ParserError::ExpectedToken(TokenKind::For))?;
 
-        let ty = self.parse_type()?;
+        let ty = self.parse_namespaced_identifier()?;
 
         self.consume_token(
             TokenKind::LeftBrace,

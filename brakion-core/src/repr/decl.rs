@@ -43,7 +43,7 @@ pub enum Decl {
     },
     Impl {
         trait_name: NamespacedIdentifier,
-        type_name: TypeReference,
+        type_name: NamespacedIdentifier,
         body: Vec<Function>,
     },
 }
@@ -183,44 +183,51 @@ pub fn look_up_type_variant<'a>(
         .map(NamespaceReference::TypeVariant)
 }
 
+pub fn look_up_module<'a>(decls: &'a [Decl], name: &[String]) -> Option<&'a [Decl]> {
+    if name.is_empty() {
+        return Some(decls);
+    }
+
+    let outer_namespace = &name.first().unwrap();
+    let inner_namespace = &name[1..];
+
+    decls
+        .iter()
+        .find(|decl| match decl {
+            Decl::Module { name: id, .. } => id.name == **outer_namespace,
+            _ => false,
+        })
+        .and_then(|decl| match decl {
+            Decl::Module { body, .. } => look_up_module(body, inner_namespace),
+            _ => None,
+        })
+}
+
 pub fn type_implements_trait(
     decls: &[Decl],
     type_name: &NamespacedIdentifier,
     trait_name: &NamespacedIdentifier,
 ) -> Result<bool, ValidatorError> {
-    let type_decl = match look_up_decl(decls, type_name) {
-        Some(NamespaceReference::Decl(decl)) if matches!(decl, Decl::Type { .. }) => decl,
-        _ => return Err(ValidatorError::UnknownType(type_name.clone())),
+    let type_name_strs = type_name
+        .namespace
+        .iter()
+        .map(|id| id.name.clone())
+        .collect::<Vec<_>>();
+
+    let type_trait_impl = if let Some(decls) = look_up_module(decls, &type_name_strs) {
+        decls.iter().find(|decl| match decl {
+            Decl::Impl {
+                type_name: impl_type_name,
+                trait_name: impl_trait_name,
+                ..
+            } => impl_type_name == type_name && impl_trait_name == trait_name,
+            _ => false,
+        })
+    } else {
+        return Err(ValidatorError::UnknownType(type_name.clone()));
     };
 
-    let trait_decl = match look_up_decl(decls, trait_name) {
-        Some(NamespaceReference::Decl(decl)) if matches!(decl, Decl::Trait { .. }) => decl,
-        _ => return Err(ValidatorError::UnknownTrait(trait_name.clone())),
-    };
-
-    match (&type_decl, &trait_decl) {
-        (
-            Decl::Type {
-                body: type_body, ..
-            },
-            Decl::Trait {
-                body: trait_body, ..
-            },
-        ) => {
-            for trait_method in &trait_body.methods {
-                let type_method = type_body.methods.iter().find(|(vis, func)| {
-                    vis == &Visibility::Public && func.signature.name == trait_method.name
-                });
-
-                if type_method.is_none() {
-                    return Ok(false);
-                }
-            }
-
-            Ok(true)
-        }
-        _ => Err(ValidatorError::UnknownType(type_name.clone())),
-    }
+    Ok(type_trait_impl.is_some())
 }
 
 impl TypeReferenceKind {
@@ -283,9 +290,9 @@ impl TypeReferenceKind {
             }
             (Self::List(a), Self::List(b)) => a.kind.is_compatible(&b.kind, decls),
             (Self::Union(a), Self::Union(b)) => {
-                for a in a.iter() {
+                for b in b.iter() {
                     let mut exactly_one = false;
-                    for b in b.iter() {
+                    for a in a.iter() {
                         if a.kind.is_compatible(&b.kind, decls)? {
                             if exactly_one {
                                 return Ok(false);

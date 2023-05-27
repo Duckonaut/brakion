@@ -1,8 +1,8 @@
 use crate::{
     repr::{
-        Decl, Identifier, NamespacedIdentifier, TraitBody, TypeBody, TypeReference,
-        TypeReferenceKind,
-        Visibility::{self, Public}, look_up_decl, NamespaceReference,
+        look_up_decl, Decl, Identifier, NamespaceReference, NamespacedIdentifier, TraitBody,
+        TypeBody, TypeReference, TypeReferenceKind,
+        Visibility::{self, Public}, type_implements_trait,
     },
     tests::test_span,
 };
@@ -76,27 +76,81 @@ fn lookup() {
                     span: test_span(1, 4),
                 },
             },
-            type_name: TypeReference {
-                kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                    namespace: vec![],
-                    ident: Identifier {
-                        name: "Foo".into(),
-                        span: test_span(1, 4),
-                    },
-                }),
-                span: Some(test_span(1, 4)),
+            type_name: NamespacedIdentifier {
+                namespace: vec![],
+                ident: Identifier {
+                    name: "Foo".into(),
+                    span: test_span(1, 4),
+                },
             },
             body: vec![],
         },
     ];
 
-    assert_eq!(look_up_decl(decls, &bare_namespaced_ident("Foo")), Some(NamespaceReference::Decl(&decls[0])));
+    assert_eq!(
+        look_up_decl(decls, &bare_namespaced_ident("Foo")),
+        Some(NamespaceReference::Decl(&decls[0]))
+    );
 
-    assert_eq!(look_up_decl(decls, &bare_namespaced_ident("Bar")), Some(NamespaceReference::Decl(&decls[1])));
+    assert_eq!(
+        look_up_decl(decls, &bare_namespaced_ident("Bar")),
+        Some(NamespaceReference::Decl(&decls[1]))
+    );
 
-    assert_eq!(look_up_decl(decls, &bare_namespaced_ident("Baz")), Some(NamespaceReference::Decl(&decls[2])));
+    assert_eq!(
+        look_up_decl(decls, &bare_namespaced_ident("Baz")),
+        Some(NamespaceReference::Decl(&decls[2]))
+    );
 
-    assert_eq!(look_up_decl(decls, &bare_namespaced_ident("Xyz")), Some(NamespaceReference::Decl(&decls[3])));
+    assert_eq!(
+        look_up_decl(decls, &bare_namespaced_ident("Xyz")),
+        Some(NamespaceReference::Decl(&decls[3]))
+    );
+}
+
+#[test]
+fn type_impl_trait() {
+    let decls = &[
+        dummy_type("Foo".into()),
+        dummy_type("Bar".into()),
+        Decl::Trait {
+            visibility: Visibility::Public,
+            name: Identifier {
+                name: "Xyz".into(),
+                span: test_span(1, 4),
+            },
+            body: TraitBody { methods: vec![] },
+        },
+        Decl::Impl {
+            trait_name: NamespacedIdentifier {
+                namespace: vec![],
+                ident: Identifier {
+                    name: "Xyz".into(),
+                    span: test_span(1, 4),
+                },
+            },
+            type_name: NamespacedIdentifier {
+                namespace: vec![],
+                ident: Identifier {
+                    name: "Foo".into(),
+                    span: test_span(1, 4),
+                },
+            },
+            body: vec![],
+        },
+    ];
+
+    assert!(type_implements_trait(
+        decls,
+        &bare_namespaced_ident("Foo"),
+        &bare_namespaced_ident("Xyz")
+    ).unwrap());
+
+    assert!(!type_implements_trait(
+        decls,
+        &bare_namespaced_ident("Bar"),
+        &bare_namespaced_ident("Xyz")
+    ).unwrap());
 }
 
 #[test]
@@ -477,15 +531,12 @@ fn union_to_union() {
                     span: test_span(1, 4),
                 },
             },
-            type_name: TypeReference {
-                kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                    namespace: vec![],
-                    ident: Identifier {
-                        name: "Foo".into(),
-                        span: test_span(1, 4),
-                    },
-                }),
-                span: Some(test_span(1, 4)),
+            type_name: NamespacedIdentifier {
+                namespace: vec![],
+                ident: Identifier {
+                    name: "Foo".into(),
+                    span: test_span(1, 4),
+                },
             },
             body: vec![],
         },
@@ -619,6 +670,8 @@ fn union_to_union() {
             span: Some(test_span(1, 4)),
         },
     ]);
+
+    println!("START");
 
     assert_incompatible(decls, &a, &b);
 }

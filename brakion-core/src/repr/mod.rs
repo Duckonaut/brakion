@@ -19,6 +19,22 @@ pub struct Identifier {
     pub name: String,
 }
 
+impl Identifier {
+    pub fn new(span: Span, name: impl Into<String>) -> Self {
+        Self {
+            span,
+            name: name.into(),
+        }
+    }
+
+    pub fn to_namespaced(self) -> NamespacedIdentifier {
+        NamespacedIdentifier {
+            namespace: vec![],
+            ident: self,
+        }
+    }
+}
+
 /// A namespaced identifier.
 /// Used for lookup of variables, functions, types, etc.
 #[derive(Debug, Hash, PartialEq, Clone)]
@@ -35,6 +51,15 @@ impl NamespacedIdentifier {
         } else {
             self.ident.span
         }
+    }
+
+    pub fn to_strs(&self) -> Vec<String> {
+        let mut strs = vec![];
+        for ns in &self.namespace {
+            strs.push(ns.name.clone());
+        }
+        strs.push(self.ident.name.clone());
+        strs
     }
 }
 

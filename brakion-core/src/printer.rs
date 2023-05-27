@@ -210,7 +210,7 @@ impl BrakionTreeVisitor for Printer {
             } => {
                 let mut impl_node = PrinterNode::new("impl".to_string());
                 impl_node.descriptor("trait", &trait_name);
-                impl_node.field("type", self.visit_type_reference(type_name));
+                impl_node.descriptor("type", type_name.to_string());
 
                 for decl in body.iter_mut() {
                     let mut member_node = PrinterNode::new("member".to_string());
