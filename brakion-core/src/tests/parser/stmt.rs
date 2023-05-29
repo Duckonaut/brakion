@@ -336,17 +336,14 @@ fn while_stmt() {
                 },
                 body: Box::new(Stmt {
                     kind: StmtKind::Expr(Expr {
-                        kind: ExprKind::Call {
-                            expr: Box::new(Expr {
-                                kind: ExprKind::Variable(NamespacedIdentifier {
-                                    namespace: vec![],
-                                    ident: Identifier {
-                                        name: "a".to_string(),
-                                        span: test_span(12, 13),
-                                    },
-                                }),
-                                span: test_span(12, 13),
-                            }),
+                        kind: ExprKind::FunctionCall {
+                            name: NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    name: "a".to_string(),
+                                    span: test_span(12, 13),
+                                },
+                            },
                             args: vec![],
                         },
                         span: test_span(12, 15),
@@ -381,17 +378,14 @@ fn for_stmt() {
                 },
                 body: Box::new(Stmt {
                     kind: StmtKind::Expr(Expr {
-                        kind: ExprKind::Call {
-                            expr: Box::new(Expr {
-                                kind: ExprKind::Variable(NamespacedIdentifier {
-                                    namespace: vec![],
-                                    ident: Identifier {
-                                        name: "a".to_string(),
-                                        span: test_span(12, 13),
-                                    },
-                                }),
-                                span: test_span(12, 13),
-                            }),
+                        kind: ExprKind::FunctionCall {
+                            name: NamespacedIdentifier {
+                                namespace: vec![],
+                                ident: Identifier {
+                                    name: "a".to_string(),
+                                    span: test_span(12, 13),
+                                },
+                            },
                             args: vec![],
                         },
                         span: test_span(12, 15),
@@ -576,17 +570,14 @@ fn match_ctor() {
                         body: Box::new(Stmt {
                             kind: StmtKind::Block(vec![Stmt {
                                 kind: StmtKind::Expr(Expr {
-                                    kind: ExprKind::Call {
-                                        expr: Box::new(Expr {
-                                            kind: ExprKind::Variable(NamespacedIdentifier {
-                                                namespace: vec![],
-                                                ident: Identifier {
-                                                    name: "hi".to_string(),
-                                                    span: test_span(36, 38),
-                                                },
-                                            }),
-                                            span: test_span(36, 38),
-                                        }),
+                                    kind: ExprKind::FunctionCall {
+                                        name: NamespacedIdentifier {
+                                            namespace: vec![],
+                                            ident: Identifier {
+                                                name: "hi".to_string(),
+                                                span: test_span(36, 38),
+                                            },
+                                        },
                                         args: vec![],
                                     },
                                     span: test_span(36, 40),
@@ -601,17 +592,14 @@ fn match_ctor() {
                         body: Box::new(Stmt {
                             kind: StmtKind::Block(vec![Stmt {
                                 kind: StmtKind::Expr(Expr {
-                                    kind: ExprKind::Call {
-                                        expr: Box::new(Expr {
-                                            kind: ExprKind::Variable(NamespacedIdentifier {
-                                                namespace: vec![],
-                                                ident: Identifier {
-                                                    name: "bye".to_string(),
-                                                    span: test_span(51, 54),
-                                                },
-                                            }),
-                                            span: test_span(51, 54),
-                                        }),
+                                    kind: ExprKind::FunctionCall {
+                                        name: NamespacedIdentifier {
+                                            namespace: vec![],
+                                            ident: Identifier {
+                                                name: "bye".to_string(),
+                                                span: test_span(51, 54),
+                                            },
+                                        },
                                         args: vec![],
                                     },
                                     span: test_span(51, 56),

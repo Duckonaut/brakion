@@ -1257,13 +1257,21 @@ where
             let closing_paren_span = self.last_token_span().unwrap();
             let expr_span = expr.span;
 
-            Ok(Ok(Expr {
-                kind: ExprKind::Call {
-                    expr: Box::new(expr),
-                    args,
-                },
-                span: Span::from_spans(expr_span, closing_paren_span),
-            }))
+            match expr.kind {
+                ExprKind::Variable(name) => Ok(Ok(Expr {
+                    kind: ExprKind::FunctionCall { name, args },
+                    span: Span::from_spans(expr_span, closing_paren_span),
+                })),
+                ExprKind::Access { expr, field } => Ok(Ok(Expr {
+                    kind: ExprKind::MethodCall {
+                        expr,
+                        method: field,
+                        args,
+                    },
+                    span: Span::from_spans(expr_span, closing_paren_span),
+                })),
+                _ => Err((ParserError::BadCall, Some(expr.span))),
+            }
         } else if self.match_token(TokenKind::LeftBracket) {
             let index = self.require_expr()?;
 

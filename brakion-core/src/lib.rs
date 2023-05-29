@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use filters::ParserTokenFilter;
 use repr::BrakionTreeVisitor;
 use unit::{Location, ReadSeek, Unit, UnitIdentifier, Units};

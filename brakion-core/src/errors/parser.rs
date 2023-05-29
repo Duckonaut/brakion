@@ -20,6 +20,7 @@ pub enum ParserError {
     ExpectedMatchArm,
     TooManyFunctionParameters,
     VariantMethodInterweave,
+    BadCall,
 }
 
 impl ParserError {
@@ -42,6 +43,7 @@ impl ParserError {
             ParserError::TooManyFunctionParameters => true,
             ParserError::ExpectedBody => false,
             ParserError::VariantMethodInterweave => false,
+            ParserError::BadCall => false,
         }
     }
 }
@@ -78,6 +80,9 @@ impl Display for ParserError {
             ParserError::ExpectedBody => write!(f, "Expected body"),
             ParserError::VariantMethodInterweave => {
                 write!(f, "Type methods must be declared after all the variants")
+            }
+            ParserError::BadCall => {
+                write!(f, "Calling a non-function and non-method is not allowed")
             }
         }
     }

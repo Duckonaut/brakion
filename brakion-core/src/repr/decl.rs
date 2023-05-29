@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::{errors::validator::ValidatorError, unit::Span};
 
 use super::{Identifier, NamespacedIdentifier, Stmt};
@@ -48,7 +50,7 @@ pub enum Decl {
     },
 }
 
-#[derive(Debug, Hash, PartialEq)]
+#[derive(Debug, Hash, PartialEq, Clone)]
 pub struct FunctionSignature {
     pub name: Identifier,
     pub takes_self: bool,
@@ -63,14 +65,14 @@ pub struct Function {
     pub body: Vec<Stmt>,
 }
 
-#[derive(Debug, Hash, PartialEq)]
+#[derive(Debug, Hash, PartialEq, Clone)]
 pub struct Parameter {
     pub name: Identifier,
     pub ty: TypeReference,
     pub kind: ParameterSpec,
 }
 
-#[derive(Debug, Hash, PartialEq)]
+#[derive(Debug, Hash, PartialEq, Clone)]
 pub enum ParameterSpec {
     Basic,
     Preconditioned(TypeReference),
@@ -105,14 +107,94 @@ pub struct TypeReference {
     pub kind: TypeReferenceKind,
 }
 
+#[derive(Debug, Hash, PartialEq, Clone, PartialOrd, Eq, Ord)]
+pub enum IntSize {
+    I8,
+    I16,
+    I32,
+    I64,
+}
+
+#[derive(Debug, Hash, PartialEq, Clone, PartialOrd, Eq, Ord)]
+pub enum FloatSize {
+    F32,
+    F64,
+}
+
 #[derive(Debug, Hash, PartialEq, Clone)]
 pub enum TypeReferenceKind {
-    Infer, // Decide at type checking time
+    Infer,                         // Decide at type checking time
+    IntegerAtLeast(IntSize, bool), // Integer of indeterminate size, decided at type checking time
+    FloatIndeterminate,            // Float of indeterminate size, decided at type checking time
+    Integer(IntSize, bool),        // Integer of specific size, signed or unsigned
+    Float(FloatSize),
+    Bool,
+    Char,
+    String,
     Void,
     // TODO: Are builtin types special?
     Named(NamespacedIdentifier),
     List(Box<TypeReference>),
     Union(Vec<TypeReference>),
+}
+
+impl Display for TypeReferenceKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TypeReferenceKind::Infer => write!(f, "_"),
+            TypeReferenceKind::IntegerAtLeast(size, signed) => {
+                write!(
+                    f,
+                    "{}{}+",
+                    if *signed { "i" } else { "u" },
+                    match size {
+                        IntSize::I8 => "8",
+                        IntSize::I16 => "16",
+                        IntSize::I32 => "32",
+                        IntSize::I64 => "64",
+                    }
+                )
+            }
+            TypeReferenceKind::FloatIndeterminate => write!(f, "{{float}}"),
+            TypeReferenceKind::Integer(size, signed) => {
+                write!(
+                    f,
+                    "{}{}",
+                    if *signed { "i" } else { "u" },
+                    match size {
+                        IntSize::I8 => "8",
+                        IntSize::I16 => "16",
+                        IntSize::I32 => "32",
+                        IntSize::I64 => "64",
+                    }
+                )
+            }
+            TypeReferenceKind::Float(size) => write!(
+                f,
+                "f{}",
+                match size {
+                    FloatSize::F32 => "32",
+                    FloatSize::F64 => "64",
+                }
+            ),
+            TypeReferenceKind::Bool => write!(f, "bool"),
+            TypeReferenceKind::Char => write!(f, "char"),
+            TypeReferenceKind::String => write!(f, "string"),
+            TypeReferenceKind::Void => write!(f, "void"),
+            TypeReferenceKind::Named(name) => write!(f, "{}", name),
+            TypeReferenceKind::List(ty) => write!(f, "[{}]", ty.kind),
+            TypeReferenceKind::Union(tys) => {
+                write!(f, "(")?;
+                for (i, ty) in tys.iter().enumerate() {
+                    if i != 0 {
+                        write!(f, " | ")?;
+                    }
+                    write!(f, "{}", ty.kind)?;
+                }
+                write!(f, ")")
+            }
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -235,6 +317,46 @@ impl TypeReferenceKind {
         matches!(self, TypeReferenceKind::Infer)
     }
 
+    pub fn is_void(&self) -> bool {
+        matches!(self, TypeReferenceKind::Void)
+    }
+
+    pub fn is_named(&self) -> bool {
+        matches!(self, TypeReferenceKind::Named(_))
+    }
+
+    pub fn is_list(&self) -> bool {
+        matches!(self, TypeReferenceKind::List(_))
+    }
+
+    pub fn is_union(&self) -> bool {
+        matches!(self, TypeReferenceKind::Union(_))
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        matches!(
+            self,
+            TypeReferenceKind::IntegerAtLeast(_, _)
+                | TypeReferenceKind::FloatIndeterminate
+                | TypeReferenceKind::Integer(_, _)
+                | TypeReferenceKind::Float(_)
+        )
+    }
+
+    pub fn is_integer(&self) -> bool {
+        matches!(
+            self,
+            TypeReferenceKind::IntegerAtLeast(_, _) | TypeReferenceKind::Integer(_, _)
+        )
+    }
+
+    pub fn is_float(&self) -> bool {
+        matches!(
+            self,
+            TypeReferenceKind::FloatIndeterminate | TypeReferenceKind::Float(_)
+        )
+    }
+
     /// Checks if a variable of `self` can be assigned a value of `other`.
     /// - `Infer` can be assigned anything
     /// - `Void` can be assigned a value of `Void`.
@@ -323,6 +445,34 @@ impl TypeReferenceKind {
 
                 Ok(exactly_one)
             }
+            (a, b) if a == b => Ok(true),
+            (TypeReferenceKind::Float(size), TypeReferenceKind::Float(other_size)) => {
+                Ok(size >= other_size)
+            }
+            (TypeReferenceKind::Float(_), TypeReferenceKind::Integer(..)) => Ok(true),
+            (TypeReferenceKind::Float(_), TypeReferenceKind::IntegerAtLeast(..)) => Ok(true),
+            (TypeReferenceKind::Float(..), TypeReferenceKind::FloatIndeterminate) => Ok(true),
+            (TypeReferenceKind::FloatIndeterminate, TypeReferenceKind::Integer(..)) => Ok(true),
+            (TypeReferenceKind::FloatIndeterminate, TypeReferenceKind::IntegerAtLeast(..)) => {
+                Ok(true)
+            }
+            (TypeReferenceKind::FloatIndeterminate, TypeReferenceKind::Float(..)) => Ok(true),
+            (
+                TypeReferenceKind::IntegerAtLeast(size, signed),
+                TypeReferenceKind::Integer(other_size, other_signed),
+            ) => Ok(size >= other_size && (!other_signed || signed == other_signed)),
+            (
+                TypeReferenceKind::IntegerAtLeast(size, signed),
+                TypeReferenceKind::IntegerAtLeast(other_size, other_signed),
+            ) => Ok(size >= other_size && (!other_signed || signed == other_signed)),
+            (
+                TypeReferenceKind::Integer(size, signed),
+                TypeReferenceKind::IntegerAtLeast(other_size, other_signed),
+            ) => Ok(size >= other_size && (!other_signed || signed == other_signed)),
+            (
+                TypeReferenceKind::Integer(size, signed),
+                TypeReferenceKind::Integer(other_size, other_signed),
+            ) => Ok(size >= other_size && (!other_signed || signed == other_signed)),
             _ => Ok(false),
         }
     }

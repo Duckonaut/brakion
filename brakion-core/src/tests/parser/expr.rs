@@ -1371,17 +1371,14 @@ fn call() {
     check_output_expr(
         "a()",
         Some(Expr {
-            kind: ExprKind::Call {
-                expr: Box::new(Expr {
-                    kind: ExprKind::Variable(NamespacedIdentifier {
-                        namespace: vec![],
-                        ident: Identifier {
-                            span: test_span(1, 2),
-                            name: "a".to_string(),
-                        },
-                    }),
-                    span: test_span(1, 2),
-                }),
+            kind: ExprKind::FunctionCall {
+                name: NamespacedIdentifier {
+                    namespace: vec![],
+                    ident: Identifier {
+                        span: test_span(1, 2),
+                        name: "a".to_string(),
+                    },
+                },
                 args: vec![],
             },
             span: test_span(1, 4),
@@ -1394,52 +1391,20 @@ fn namespace_call() {
     check_output_expr(
         "a::b()",
         Some(Expr {
-            kind: ExprKind::Call {
-                expr: Box::new(Expr {
-                    kind: ExprKind::Variable(NamespacedIdentifier {
-                        namespace: vec![Identifier {
-                            span: test_span(1, 2),
-                            name: "a".to_string(),
-                        }],
-                        ident: Identifier {
-                            span: test_span(4, 5),
-                            name: "b".to_string(),
-                        },
-                    }),
-                    span: test_span(1, 5),
-                }),
+            kind: ExprKind::FunctionCall {
+                name: NamespacedIdentifier {
+                    namespace: vec![Identifier {
+                        span: test_span(1, 2),
+                        name: "a".to_string(),
+                    }],
+                    ident: Identifier {
+                        span: test_span(4, 5),
+                        name: "b".to_string(),
+                    },
+                },
                 args: vec![],
             },
             span: test_span(1, 7),
-        }),
-    )
-}
-
-#[test]
-fn call_chain() {
-    check_output_expr(
-        "a()()",
-        Some(Expr {
-            kind: ExprKind::Call {
-                expr: Box::new(Expr {
-                    kind: ExprKind::Call {
-                        expr: Box::new(Expr {
-                            kind: ExprKind::Variable(NamespacedIdentifier {
-                                namespace: vec![],
-                                ident: Identifier {
-                                    span: test_span(1, 2),
-                                    name: "a".to_string(),
-                                },
-                            }),
-                            span: test_span(1, 2),
-                        }),
-                        args: vec![],
-                    },
-                    span: test_span(1, 4),
-                }),
-                args: vec![],
-            },
-            span: test_span(1, 6),
         }),
     )
 }
@@ -1449,17 +1414,14 @@ fn call_with_args() {
     check_output_expr(
         "a(b, c)",
         Some(Expr {
-            kind: ExprKind::Call {
-                expr: Box::new(Expr {
-                    kind: ExprKind::Variable(NamespacedIdentifier {
-                        namespace: vec![],
-                        ident: Identifier {
-                            span: test_span(1, 2),
-                            name: "a".to_string(),
-                        },
-                    }),
-                    span: test_span(1, 2),
-                }),
+            kind: ExprKind::FunctionCall {
+                name: NamespacedIdentifier {
+                    namespace: vec![],
+                    ident: Identifier {
+                        span: test_span(1, 2),
+                        name: "a".to_string(),
+                    },
+                },
                 args: vec![
                     Expr {
                         kind: ExprKind::Variable(NamespacedIdentifier {
@@ -1493,17 +1455,14 @@ fn call_with_args_trailing_comma() {
     check_output_expr(
         "a(b, c,)",
         Some(Expr {
-            kind: ExprKind::Call {
-                expr: Box::new(Expr {
-                    kind: ExprKind::Variable(NamespacedIdentifier {
-                        namespace: vec![],
-                        ident: Identifier {
-                            span: test_span(1, 2),
-                            name: "a".to_string(),
-                        },
-                    }),
-                    span: test_span(1, 2),
-                }),
+            kind: ExprKind::FunctionCall {
+                name: NamespacedIdentifier {
+                    namespace: vec![],
+                    ident: Identifier {
+                        span: test_span(1, 2),
+                        name: "a".to_string(),
+                    },
+                },
                 args: vec![
                     Expr {
                         kind: ExprKind::Variable(NamespacedIdentifier {
@@ -1624,62 +1583,25 @@ fn indexing_chain() {
 }
 
 #[test]
-fn indexing_call() {
-    check_output_expr(
-        "a[0]()",
-        Some(Expr {
-            kind: ExprKind::Call {
-                expr: Box::new(Expr {
-                    kind: ExprKind::Index {
-                        expr: Box::new(Expr {
-                            kind: ExprKind::Variable(NamespacedIdentifier {
-                                namespace: vec![],
-                                ident: Identifier {
-                                    span: test_span(1, 2),
-                                    name: "a".to_string(),
-                                },
-                            }),
-                            span: test_span(1, 2),
-                        }),
-                        index: Box::new(Expr {
-                            kind: ExprKind::Literal(Literal::Int(0)),
-                            span: test_span(3, 4),
-                        }),
-                    },
-                    span: test_span(1, 5),
-                }),
-                args: vec![],
-            },
-            span: test_span(1, 7),
-        }),
-    )
-}
-
-#[test]
 fn field_call() {
     check_output_expr(
         "a.b()",
         Some(Expr {
-            kind: ExprKind::Call {
+            kind: ExprKind::MethodCall {
                 expr: Box::new(Expr {
-                    kind: ExprKind::Access {
-                        expr: Box::new(Expr {
-                            kind: ExprKind::Variable(NamespacedIdentifier {
-                                namespace: vec![],
-                                ident: Identifier {
-                                    span: test_span(1, 2),
-                                    name: "a".to_string(),
-                                },
-                            }),
+                    kind: ExprKind::Variable(NamespacedIdentifier {
+                        namespace: vec![],
+                        ident: Identifier {
                             span: test_span(1, 2),
-                        }),
-                        field: Identifier {
-                            span: test_span(3, 4),
-                            name: "b".to_string(),
+                            name: "a".to_string(),
                         },
-                    },
-                    span: test_span(1, 4),
+                    }),
+                    span: test_span(1, 2),
                 }),
+                method: Identifier {
+                    span: test_span(3, 4),
+                    name: "b".to_string(),
+                },
                 args: vec![],
             },
             span: test_span(1, 6),
@@ -1694,17 +1616,14 @@ fn call_field() {
         Some(Expr {
             kind: ExprKind::Access {
                 expr: Box::new(Expr {
-                    kind: ExprKind::Call {
-                        expr: Box::new(Expr {
-                            kind: ExprKind::Variable(NamespacedIdentifier {
-                                namespace: vec![],
-                                ident: Identifier {
-                                    span: test_span(1, 2),
-                                    name: "a".to_string(),
-                                },
-                            }),
-                            span: test_span(1, 2),
-                        }),
+                    kind: ExprKind::FunctionCall {
+                        name: NamespacedIdentifier {
+                            namespace: vec![],
+                            ident: Identifier {
+                                span: test_span(1, 2),
+                                name: "a".to_string(),
+                            },
+                        },
                         args: vec![],
                     },
                     span: test_span(1, 4),

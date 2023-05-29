@@ -60,7 +60,9 @@ impl PrinterNode {
             (PrinterNodeBranch::Flag(a), PrinterNodeBranch::Flag(b)) => a.cmp(b),
             (PrinterNodeBranch::Flag(_), _) => Ordering::Less,
             (_, PrinterNodeBranch::Flag(_)) => Ordering::Greater,
-            (PrinterNodeBranch::Descriptor(_, _), PrinterNodeBranch::Descriptor(_, _)) => Ordering::Equal,
+            (PrinterNodeBranch::Descriptor(_, _), PrinterNodeBranch::Descriptor(_, _)) => {
+                Ordering::Equal
+            }
             (PrinterNodeBranch::Descriptor(_, _), _) => Ordering::Less,
             (_, PrinterNodeBranch::Descriptor(_, _)) => Ordering::Greater,
             (PrinterNodeBranch::Field(_, _), PrinterNodeBranch::Field(_, _)) => Ordering::Equal,
@@ -127,7 +129,11 @@ impl BrakionTreeVisitor for Printer {
 
     fn visit_decl(&mut self, decl: &mut Decl) -> Self::DeclResult {
         match decl {
-            Decl::Module { visibility, name, body } => {
+            Decl::Module {
+                visibility,
+                name,
+                body,
+            } => {
                 let mut module_node = PrinterNode::new("module".to_string());
                 if visibility.is_public() {
                     module_node.flag("pub");
@@ -139,7 +145,10 @@ impl BrakionTreeVisitor for Printer {
 
                 module_node
             }
-            Decl::Function { visibility, function } => {
+            Decl::Function {
+                visibility,
+                function,
+            } => {
                 let mut f_node = PrinterNode::new("fn".to_string());
                 if visibility.is_public() {
                     f_node.flag("pub");
@@ -155,7 +164,11 @@ impl BrakionTreeVisitor for Printer {
 
                 f_node
             }
-            Decl::Type { visibility, name, body } => {
+            Decl::Type {
+                visibility,
+                name,
+                body,
+            } => {
                 let mut type_node = PrinterNode::new("type".to_string());
                 if visibility.is_public() {
                     type_node.flag("pub");
@@ -190,7 +203,11 @@ impl BrakionTreeVisitor for Printer {
 
                 type_node
             }
-            Decl::Trait { visibility, name, body } => {
+            Decl::Trait {
+                visibility,
+                name,
+                body,
+            } => {
                 let mut trait_node = PrinterNode::new("trait".to_string());
                 if visibility.is_public() {
                     trait_node.flag("pub");
@@ -414,9 +431,20 @@ impl BrakionTreeVisitor for Printer {
                 node.descriptor("field", &field.name);
                 node
             }
-            ExprKind::Call { expr, args } => {
+            ExprKind::FunctionCall { name, args } => {
                 let mut node = PrinterNode::new("call".to_string());
+                node.descriptor("name", &name);
+                let mut args_node = PrinterNode::new("args".to_string());
+                for arg in args.iter_mut() {
+                    args_node.node(self.visit_expr(arg));
+                }
+                node.node(args_node);
+                node
+            }
+            ExprKind::MethodCall { expr, method, args } => {
+                let mut node = PrinterNode::new("method-call".to_string());
                 node.field("expr", self.visit_expr(expr));
+                node.descriptor("method", &method.name);
                 let mut args_node = PrinterNode::new("args".to_string());
                 for arg in args.iter_mut() {
                     args_node.node(self.visit_expr(arg));
@@ -476,6 +504,29 @@ impl BrakionTreeVisitor for Printer {
                 node
             }
             TypeReferenceKind::Infer => PrinterNode::new("infer".to_string()),
+            TypeReferenceKind::Integer(size, signed) => PrinterNode::new(format!(
+                "{}{}",
+                if *signed { "i" } else { "u" },
+                match size {
+                    IntSize::I8 => 8,
+                    IntSize::I16 => 16,
+                    IntSize::I32 => 32,
+                    IntSize::I64 => 64,
+                }
+            )),
+            TypeReferenceKind::Float(size) => PrinterNode::new(format!(
+                "f{}",
+                match size {
+                    FloatSize::F32 => 32,
+                    FloatSize::F64 => 64,
+                }
+            )),
+            TypeReferenceKind::Bool => PrinterNode::new("bool".to_string()),
+            TypeReferenceKind::Char => PrinterNode::new("char".to_string()),
+            TypeReferenceKind::String => PrinterNode::new("string".to_string()),
+            TypeReferenceKind::FloatIndeterminate | TypeReferenceKind::IntegerAtLeast(..) => {
+                unreachable!() // these only appear in the type checker
+            }
         }
     }
 }

@@ -27,11 +27,22 @@ impl Identifier {
         }
     }
 
-    pub fn to_namespaced(self) -> NamespacedIdentifier {
+    pub fn into_namespaced(self) -> NamespacedIdentifier {
         NamespacedIdentifier {
             namespace: vec![],
             ident: self,
         }
+    }
+
+    pub fn namespaced(&self) -> NamespacedIdentifier {
+        NamespacedIdentifier {
+            namespace: vec![],
+            ident: self.clone(),
+        }
+    }
+
+    pub fn same(&self, other: &Self) -> bool {
+        self.name == other.name
     }
 }
 
@@ -60,6 +71,25 @@ impl NamespacedIdentifier {
         }
         strs.push(self.ident.name.clone());
         strs
+    }
+
+    pub fn same(&self, other: &Self) -> bool {
+        for (ns1, ns2) in self.namespace.iter().zip(other.namespace.iter()) {
+            if !ns1.same(ns2) {
+                return false;
+            }
+        }
+
+        self.ident.same(&other.ident)
+    }
+
+    pub fn up(&self) -> Self {
+        let mut namespace = self.namespace.clone();
+        let ident = namespace.pop().unwrap();
+        Self {
+            namespace,
+            ident,
+        }
     }
 }
 

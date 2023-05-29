@@ -1,8 +1,8 @@
-use std::hash::Hash;
+use std::{fmt::Display, hash::Hash};
 
 use crate::unit::Span;
 
-use super::{NamespacedIdentifier, Identifier, TypeReference};
+use super::{Identifier, NamespacedIdentifier, TypeReference};
 
 #[derive(Debug, Hash, PartialEq)]
 pub struct Expr {
@@ -32,8 +32,13 @@ pub enum ExprKind {
         expr: Box<Expr>,
         field: Identifier,
     },
-    Call {
+    FunctionCall {
+        name: NamespacedIdentifier,
+        args: Vec<Expr>,
+    },
+    MethodCall {
         expr: Box<Expr>,
+        method: Identifier,
         args: Vec<Expr>,
     },
     Index {
@@ -72,10 +77,19 @@ impl Hash for Literal {
     }
 }
 
-#[derive(Debug, Hash, PartialEq)]
+#[derive(Debug, Hash, PartialEq, Clone)]
 pub enum UnaryOp {
     Neg,
     Not,
+}
+
+impl Display for UnaryOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnaryOp::Neg => write!(f, "-"),
+            UnaryOp::Not => write!(f, "!"),
+        }
+    }
 }
 
 #[derive(Debug, Hash, PartialEq, Clone)]
@@ -94,6 +108,25 @@ pub enum BinaryOp {
     Geq,
 }
 
+impl Display for BinaryOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BinaryOp::Add => write!(f, "+"),
+            BinaryOp::Sub => write!(f, "-"),
+            BinaryOp::Mul => write!(f, "*"),
+            BinaryOp::Div => write!(f, "/"),
+            BinaryOp::And => write!(f, "and"),
+            BinaryOp::Or => write!(f, "or"),
+            BinaryOp::Eq => write!(f, "=="),
+            BinaryOp::Neq => write!(f, "!="),
+            BinaryOp::Lt => write!(f, "<"),
+            BinaryOp::Gt => write!(f, ">"),
+            BinaryOp::Leq => write!(f, "<="),
+            BinaryOp::Geq => write!(f, ">="),
+        }
+    }
+}
+
 #[derive(Debug, Hash, PartialEq, Clone)]
 pub enum TypeBinaryOp {
     Is,
@@ -102,10 +135,6 @@ pub enum TypeBinaryOp {
 
 #[derive(Debug, Hash, PartialEq)]
 pub enum FieldConstructor {
-    Named {
-        name: Identifier,
-        value: Expr,
-    },
+    Named { name: Identifier, value: Expr },
     Auto(Identifier),
 }
-
