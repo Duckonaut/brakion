@@ -524,7 +524,7 @@ impl BrakionTreeVisitor for Printer {
             TypeReferenceKind::Bool => PrinterNode::new("bool".to_string()),
             TypeReferenceKind::Char => PrinterNode::new("char".to_string()),
             TypeReferenceKind::String => PrinterNode::new("string".to_string()),
-            TypeReferenceKind::FloatIndeterminate | TypeReferenceKind::IntegerAtLeast(..) => {
+            TypeReferenceKind::FloatIndeterminate => {
                 unreachable!() // these only appear in the type checker
             }
         }

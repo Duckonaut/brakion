@@ -246,10 +246,10 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
         match &mut expr.kind {
             ExprKind::Literal(lit) => match lit {
                 Literal::Int(i) => match i {
-                    0..=255 => Ok(TypeReferenceKind::IntegerAtLeast(IntSize::I8, false)),
-                    0..=65535 => Ok(TypeReferenceKind::IntegerAtLeast(IntSize::I16, false)),
-                    0..=4294967295 => Ok(TypeReferenceKind::IntegerAtLeast(IntSize::I32, false)),
-                    _ => Ok(TypeReferenceKind::IntegerAtLeast(IntSize::I64, false)),
+                    0..=255 => Ok(TypeReferenceKind::Integer(IntSize::I8, false)),
+                    0..=65535 => Ok(TypeReferenceKind::Integer(IntSize::I16, false)),
+                    0..=4294967295 => Ok(TypeReferenceKind::Integer(IntSize::I32, false)),
+                    _ => Ok(TypeReferenceKind::Integer(IntSize::I64, false)),
                 },
                 Literal::Float(_) => Ok(TypeReferenceKind::FloatIndeterminate),
                 Literal::Bool(_) => Ok(TypeReferenceKind::Bool),
@@ -286,9 +286,6 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                     let result = Self::visit_expr(self, expr)?;
 
                     match result {
-                        TypeReferenceKind::IntegerAtLeast(size, _) => {
-                            Ok(TypeReferenceKind::IntegerAtLeast(size, true))
-                        }
                         TypeReferenceKind::FloatIndeterminate => {
                             Ok(TypeReferenceKind::FloatIndeterminate)
                         }

@@ -124,7 +124,6 @@ pub enum FloatSize {
 #[derive(Debug, Hash, PartialEq, Clone)]
 pub enum TypeReferenceKind {
     Infer,                         // Decide at type checking time
-    IntegerAtLeast(IntSize, bool), // Integer of indeterminate size, decided at type checking time
     FloatIndeterminate,            // Float of indeterminate size, decided at type checking time
     Integer(IntSize, bool),        // Integer of specific size, signed or unsigned
     Float(FloatSize),
@@ -142,19 +141,6 @@ impl Display for TypeReferenceKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TypeReferenceKind::Infer => write!(f, "_"),
-            TypeReferenceKind::IntegerAtLeast(size, signed) => {
-                write!(
-                    f,
-                    "{}{}+",
-                    if *signed { "i" } else { "u" },
-                    match size {
-                        IntSize::I8 => "8",
-                        IntSize::I16 => "16",
-                        IntSize::I32 => "32",
-                        IntSize::I64 => "64",
-                    }
-                )
-            }
             TypeReferenceKind::FloatIndeterminate => write!(f, "{{float}}"),
             TypeReferenceKind::Integer(size, signed) => {
                 write!(
@@ -336,8 +322,7 @@ impl TypeReferenceKind {
     pub fn is_numeric(&self) -> bool {
         matches!(
             self,
-            TypeReferenceKind::IntegerAtLeast(_, _)
-                | TypeReferenceKind::FloatIndeterminate
+                TypeReferenceKind::FloatIndeterminate
                 | TypeReferenceKind::Integer(_, _)
                 | TypeReferenceKind::Float(_)
         )
@@ -346,7 +331,7 @@ impl TypeReferenceKind {
     pub fn is_integer(&self) -> bool {
         matches!(
             self,
-            TypeReferenceKind::IntegerAtLeast(_, _) | TypeReferenceKind::Integer(_, _)
+            TypeReferenceKind::Integer(_, _)
         )
     }
 
@@ -450,25 +435,8 @@ impl TypeReferenceKind {
                 Ok(size >= other_size)
             }
             (TypeReferenceKind::Float(_), TypeReferenceKind::Integer(..)) => Ok(true),
-            (TypeReferenceKind::Float(_), TypeReferenceKind::IntegerAtLeast(..)) => Ok(true),
             (TypeReferenceKind::Float(..), TypeReferenceKind::FloatIndeterminate) => Ok(true),
             (TypeReferenceKind::FloatIndeterminate, TypeReferenceKind::Integer(..)) => Ok(true),
-            (TypeReferenceKind::FloatIndeterminate, TypeReferenceKind::IntegerAtLeast(..)) => {
-                Ok(true)
-            }
-            (TypeReferenceKind::FloatIndeterminate, TypeReferenceKind::Float(..)) => Ok(true),
-            (
-                TypeReferenceKind::IntegerAtLeast(size, signed),
-                TypeReferenceKind::Integer(other_size, other_signed),
-            ) => Ok(size >= other_size && (!other_signed || signed == other_signed)),
-            (
-                TypeReferenceKind::IntegerAtLeast(size, signed),
-                TypeReferenceKind::IntegerAtLeast(other_size, other_signed),
-            ) => Ok(size >= other_size && (!other_signed || signed == other_signed)),
-            (
-                TypeReferenceKind::Integer(size, signed),
-                TypeReferenceKind::IntegerAtLeast(other_size, other_signed),
-            ) => Ok(size >= other_size && (!other_signed || signed == other_signed)),
             (
                 TypeReferenceKind::Integer(size, signed),
                 TypeReferenceKind::Integer(other_size, other_signed),

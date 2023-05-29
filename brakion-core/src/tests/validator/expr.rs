@@ -1,6 +1,8 @@
 use crate::{
+    errors::validator::ValidatorError,
     repr::{
-        BrakionTreeVisitor, Decl, Expr, ExprKind, IntSize, Literal, TypeReferenceKind, UnaryOp,
+        BinaryOp, BrakionTreeVisitor, Decl, Expr, ExprKind, IntSize, Literal, TypeReferenceKind,
+        UnaryOp,
     },
     tests::test_span,
     validator::Validator,
@@ -23,6 +25,21 @@ fn check_type(decls: &mut [Decl], expr: &mut Expr, expected_type: &TypeReference
     assert_eq!(ty, Ok(expected_type.clone()));
 }
 
+fn expect_error(decls: &mut [Decl], expr: &mut Expr, expected_error: &ValidatorError) {
+    let error_module = ErrorModule::new();
+    let mut validator = Validator::new(error_module, decls);
+    let ty = validator.visit_expr(expr);
+
+    if let Ok(ty) = ty {
+        println!("Expected error, got type {}", ty);
+        panic!("Expected error");
+    }
+
+    let error = ty.unwrap_err().0;
+
+    assert_eq!(error, *expected_error);
+}
+
 #[test]
 fn int_sizes() {
     let mut expr = Expr {
@@ -35,7 +52,7 @@ fn int_sizes() {
     check_type(
         &mut decls,
         &mut expr,
-        &TypeReferenceKind::IntegerAtLeast(IntSize::I8, false),
+        &TypeReferenceKind::Integer(IntSize::I8, false),
     );
 
     let mut expr = Expr {
@@ -46,7 +63,7 @@ fn int_sizes() {
     check_type(
         &mut decls,
         &mut expr,
-        &TypeReferenceKind::IntegerAtLeast(IntSize::I16, false),
+        &TypeReferenceKind::Integer(IntSize::I16, false),
     );
 
     let mut expr = Expr {
@@ -57,7 +74,7 @@ fn int_sizes() {
     check_type(
         &mut decls,
         &mut expr,
-        &TypeReferenceKind::IntegerAtLeast(IntSize::I32, false),
+        &TypeReferenceKind::Integer(IntSize::I32, false),
     );
 
     let mut expr = Expr {
@@ -68,7 +85,7 @@ fn int_sizes() {
     check_type(
         &mut decls,
         &mut expr,
-        &TypeReferenceKind::IntegerAtLeast(IntSize::I64, false),
+        &TypeReferenceKind::Integer(IntSize::I64, false),
     );
 }
 
@@ -84,7 +101,7 @@ fn int_signedness() {
     check_type(
         &mut decls,
         &mut expr,
-        &TypeReferenceKind::IntegerAtLeast(IntSize::I8, false),
+        &TypeReferenceKind::Integer(IntSize::I8, false),
     );
 
     let mut expr = Expr {
@@ -98,6 +115,104 @@ fn int_signedness() {
     check_type(
         &mut decls,
         &mut expr,
-        &TypeReferenceKind::IntegerAtLeast(IntSize::I8, true),
+        &TypeReferenceKind::Integer(IntSize::I8, true),
+    );
+}
+
+#[test]
+fn add_sub() {
+    let mut expr = Expr {
+        kind: ExprKind::Binary {
+            op: crate::repr::BinaryOp::Add,
+            left: Box::new(Expr {
+                kind: ExprKind::Literal(Literal::Int(0)),
+                span: test_span(1, 2),
+            }),
+            right: Box::new(Expr {
+                kind: ExprKind::Literal(Literal::Int(0)),
+                span: test_span(1, 2),
+            }),
+        },
+        span: test_span(1, 2),
+    };
+
+    let mut decls = vec![];
+
+    check_type(
+        &mut decls,
+        &mut expr,
+        &TypeReferenceKind::Integer(IntSize::I8, false),
+    );
+
+    let mut expr = Expr {
+        kind: ExprKind::Binary {
+            op: crate::repr::BinaryOp::Sub,
+            left: Box::new(Expr {
+                kind: ExprKind::Literal(Literal::Int(0)),
+                span: test_span(1, 2),
+            }),
+            right: Box::new(Expr {
+                kind: ExprKind::Literal(Literal::Int(0)),
+                span: test_span(1, 2),
+            }),
+        },
+        span: test_span(1, 2),
+    };
+
+    check_type(
+        &mut decls,
+        &mut expr,
+        &TypeReferenceKind::Integer(IntSize::I8, false),
+    );
+}
+
+#[test]
+fn int_float() {
+    let mut expr = Expr {
+        kind: ExprKind::Binary {
+            op: crate::repr::BinaryOp::Add,
+            left: Box::new(Expr {
+                kind: ExprKind::Literal(Literal::Float(0.0)),
+                span: test_span(1, 2),
+            }),
+            right: Box::new(Expr {
+                kind: ExprKind::Literal(Literal::Int(0)),
+                span: test_span(1, 2),
+            }),
+        },
+        span: test_span(1, 2),
+    };
+
+    let mut decls = vec![];
+
+    check_type(
+        &mut decls,
+        &mut expr,
+        &TypeReferenceKind::FloatIndeterminate,
+    );
+
+    let mut expr = Expr {
+        kind: ExprKind::Binary {
+            op: crate::repr::BinaryOp::Add,
+            left: Box::new(Expr {
+                kind: ExprKind::Literal(Literal::Int(0)),
+                span: test_span(1, 2),
+            }),
+            right: Box::new(Expr {
+                kind: ExprKind::Literal(Literal::Float(0.0)),
+                span: test_span(1, 2),
+            }),
+        },
+        span: test_span(1, 2),
+    };
+
+    expect_error(
+        &mut decls,
+        &mut expr,
+        &ValidatorError::BinaryOpTypeMismatch(
+            BinaryOp::Add,
+            "u8".to_string(),
+            "{float}".to_string(),
+        ),
     );
 }
