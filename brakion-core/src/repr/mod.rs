@@ -59,12 +59,13 @@ impl NamespacedIdentifier {
         Self { namespace, ident }
     }
 
-    pub fn new_from_strs(namespace: &[String], ident: String) -> Self {
+    pub fn new_from_parts(namespace: &[String], ident: String, full_span: Span) -> Self {
         let namespace = namespace
-            .into_iter()
-            .map(|name| Identifier::new(Span::default(), name))
+            .iter()
+            .map(|name| Identifier::new(full_span, name))
             .collect();
-        let ident = Identifier::new(Span::default(), ident);
+        let ident = Identifier::new(full_span, ident);
+
         Self { namespace, ident }
     }
 

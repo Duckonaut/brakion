@@ -1,0 +1,34 @@
+mod std {
+    mod io {
+        fn println(x: str) {
+            # empty
+        }
+    }
+
+    mod u64 {
+        fn to_str(x: u64) -> str {
+            # empty
+        }
+    }
+
+    mod iter {
+        fn range(x: u64, y: u64) -> [u64] {
+            # empty
+        }
+    }
+}
+
+
+fn main() {
+    var x: u64 = 0;
+
+    while (x < 10) {
+        std::io::println(std::u64::to_str(x));
+        x = x + 1;
+    }
+
+    for i in std::iter::range(0, 10) {
+        std::io::println(std::u64::to_str(i));
+    }
+}
+

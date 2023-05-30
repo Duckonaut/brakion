@@ -78,10 +78,45 @@ pub enum ParameterSpec {
     Preconditioned(TypeReference),
 }
 
+impl ParameterSpec {
+    pub fn same(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Basic, Self::Basic) => true,
+            (Self::Preconditioned(ty1), Self::Preconditioned(ty2)) => ty1.kind.same(&ty2.kind),
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Hash, PartialEq)]
 pub struct TypeBody {
     pub variants: Vec<TypeVariant>,
     pub methods: Vec<(Visibility, Function)>,
+}
+
+impl TypeBody {
+    pub fn field_type(&self, name: &str) -> Option<TypeReference> {
+        let mut field_types = Vec::new();
+
+        for variant in self.variants.iter() {
+            for variant_field in variant.fields.iter() {
+                if variant_field.name.name == name {
+                    field_types.push(variant_field.ty.clone());
+                }
+            }
+        }
+
+        if field_types.is_empty() {
+            None
+        } else if field_types.len() == 1 {
+            Some(field_types[0].clone())
+        } else {
+            Some(TypeReference {
+                span: None,
+                kind: TypeReferenceKind::Union(field_types),
+            })
+        }
+    }
 }
 
 #[derive(Debug, Hash, PartialEq)]
@@ -123,9 +158,9 @@ pub enum FloatSize {
 
 #[derive(Debug, Hash, PartialEq, Clone)]
 pub enum TypeReferenceKind {
-    Infer,                         // Decide at type checking time
-    FloatIndeterminate,            // Float of indeterminate size, decided at type checking time
-    Integer(IntSize, bool),        // Integer of specific size, signed or unsigned
+    Infer,                  // Decide at type checking time
+    FloatIndeterminate,     // Float of indeterminate size, decided at type checking time
+    Integer(IntSize, bool), // Integer of specific size, signed or unsigned
     Float(FloatSize),
     Bool,
     Char,
@@ -271,6 +306,26 @@ pub fn look_up_module<'a>(decls: &'a [Decl], name: &[String]) -> Option<&'a [Dec
         })
 }
 
+pub fn look_up_module_mut<'a>(decls: &'a mut [Decl], name: &[String]) -> Option<&'a mut [Decl]> {
+    if name.is_empty() {
+        return Some(decls);
+    }
+
+    let outer_namespace = &name.first().unwrap();
+    let inner_namespace = &name[1..];
+
+    decls
+        .iter_mut()
+        .find(|decl| match decl {
+            Decl::Module { name: id, .. } => id.name == **outer_namespace,
+            _ => false,
+        })
+        .and_then(|decl| match decl {
+            Decl::Module { body, .. } => look_up_module_mut(body, inner_namespace),
+            _ => None,
+        })
+}
+
 pub fn type_implements_trait(
     decls: &[Decl],
     type_name: &NamespacedIdentifier,
@@ -288,7 +343,7 @@ pub fn type_implements_trait(
                 type_name: impl_type_name,
                 trait_name: impl_trait_name,
                 ..
-            } => impl_type_name == type_name && impl_trait_name == trait_name,
+            } => impl_type_name.same(type_name) && impl_trait_name.same(trait_name),
             _ => false,
         })
     } else {
@@ -322,17 +377,14 @@ impl TypeReferenceKind {
     pub fn is_numeric(&self) -> bool {
         matches!(
             self,
-                TypeReferenceKind::FloatIndeterminate
+            TypeReferenceKind::FloatIndeterminate
                 | TypeReferenceKind::Integer(_, _)
                 | TypeReferenceKind::Float(_)
         )
     }
 
     pub fn is_integer(&self) -> bool {
-        matches!(
-            self,
-            TypeReferenceKind::Integer(_, _)
-        )
+        matches!(self, TypeReferenceKind::Integer(_, _))
     }
 
     pub fn is_float(&self) -> bool {
@@ -342,6 +394,10 @@ impl TypeReferenceKind {
         )
     }
 
+    pub fn is_string(&self) -> bool {
+        matches!(self, TypeReferenceKind::String)
+    }
+
     pub fn same(&self, other: &Self) -> bool {
         match (self, other) {
             (TypeReferenceKind::Infer, TypeReferenceKind::Infer) => true,
@@ -349,13 +405,15 @@ impl TypeReferenceKind {
             (TypeReferenceKind::Bool, TypeReferenceKind::Bool) => true,
             (TypeReferenceKind::String, TypeReferenceKind::String) => true,
             (TypeReferenceKind::Char, TypeReferenceKind::Char) => true,
-            (TypeReferenceKind::Named(a), TypeReferenceKind::Named(b)) => a == b,
+            (TypeReferenceKind::Named(a), TypeReferenceKind::Named(b)) => a.same(b),
             (TypeReferenceKind::List(a), TypeReferenceKind::List(b)) => a.kind.same(&b.kind),
             (TypeReferenceKind::Union(a), TypeReferenceKind::Union(b)) => {
                 a.iter().all(|a| b.iter().any(|b| a.kind.same(&b.kind)))
             }
             (TypeReferenceKind::FloatIndeterminate, TypeReferenceKind::FloatIndeterminate) => true,
-            (TypeReferenceKind::Integer(a, a_s), TypeReferenceKind::Integer(b, b_s)) => a == b && a_s == b_s,
+            (TypeReferenceKind::Integer(a, a_s), TypeReferenceKind::Integer(b, b_s)) => {
+                a == b && a_s == b_s
+            }
             (TypeReferenceKind::Float(a), TypeReferenceKind::Float(b)) => a == b,
             _ => false,
         }
@@ -411,10 +469,60 @@ impl TypeReferenceKind {
                             _ => unreachable!(),
                         }
                     }
+                    (
+                        NamespaceReference::TypeVariant(a_variant),
+                        NamespaceReference::TypeVariant(b_variant),
+                    ) => Ok(a_variant == b_variant),
+                    (
+                        NamespaceReference::Decl(Decl::Type {
+                            body: TypeBody { variants, .. },
+                            ..
+                        }),
+                        NamespaceReference::TypeVariant(b_variant),
+                    ) => {
+                        if variants.iter().any(|v| v == b_variant) {
+                            Ok(true)
+                        } else {
+                            Err(ValidatorError::TypeVariantNotFound(
+                                a.clone(),
+                                b_variant.name.name.clone(),
+                            ))
+                        }
+                    }
+                    (
+                        NamespaceReference::Decl(Decl::Trait { .. }),
+                        NamespaceReference::TypeVariant(b_variant),
+                    ) => {
+                        let type_decl = look_up_decl(decls, &b.up());
+
+                        if let Some(NamespaceReference::Decl(Decl::Type {
+                            body: TypeBody { variants, .. },
+                            ..
+                        })) = type_decl
+                        {
+                            if variants.iter().any(|v| v == b_variant)
+                                && type_implements_trait(decls, &b.up(), a)?
+                            {
+                                Ok(true)
+                            } else {
+                                Err(ValidatorError::TypeVariantNotFound(
+                                    b.clone(),
+                                    b_variant.name.name.clone(),
+                                ))
+                            }
+                        } else {
+                            Err(ValidatorError::TypeVariantNotFound(
+                                b.clone(),
+                                b_variant.name.name.clone(),
+                            ))
+                        }
+                    }
                     _ => unreachable!(),
                 }
             }
-            (Self::List(a), Self::List(b)) => a.kind.is_compatible(&b.kind, decls),
+            (Self::List(a), Self::List(b)) => {
+                Ok(b.kind.is_infer() || a.kind.is_compatible(&b.kind, decls)?)
+            }
             (Self::Union(a), Self::Union(b)) => {
                 for b in b.iter() {
                     let mut exactly_one = false;
@@ -459,7 +567,7 @@ impl TypeReferenceKind {
             (
                 TypeReferenceKind::Integer(size, signed),
                 TypeReferenceKind::Integer(other_size, other_signed),
-            ) => Ok(size >= other_size && (!other_signed || signed == other_signed)),
+            ) => Ok(size >= other_size && !signed || !other_signed),
             _ => Ok(false),
         }
     }

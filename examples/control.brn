@@ -6,4 +6,14 @@ fn main(args: [str]) -> i32 {
     for a in args {
         std::io::println("arg: " + a);
     }
+
+    return 0;
+}
+
+mod std {
+    mod io {
+        fn println(x: str) {
+            # empty
+        }
+    }
 }

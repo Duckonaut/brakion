@@ -8,6 +8,7 @@ pub enum ValidatorError {
     UnknownTrait(NamespacedIdentifier),
     UnknownVariable(NamespacedIdentifier),
     UnknownField(NamespacedIdentifier, String),
+    UnknownFieldInUnion(String),
     UnknownMethod(NamespacedIdentifier, String),
     UnknownFunction(NamespacedIdentifier),
     WrongArgCount(NamespacedIdentifier, usize, usize),
@@ -17,6 +18,7 @@ pub enum ValidatorError {
     BadUnaryOp(UnaryOp, String),
     BinaryOpTypeMismatch(BinaryOp, String, String),
     AccessOnNonType(String),
+    MethodOnNonType(String),
     IndexOnNonList(String),
     IndexNotInt(String, String),
     ConstructorOfVariantedType(NamespacedIdentifier),
@@ -35,6 +37,18 @@ pub enum ValidatorError {
     DuplicateFunction(String),
     MissingTraitMethod(String),
     PreconditionCollapseFailed,
+    IncompatibleTypes(String, String),
+    InvalidAssignment,
+    BadConditionType(String),
+    BadIterableType(String),
+    BadReturnType(String, String),
+    BreakOutsideOfLoop,
+    ContinueOutsideOfLoop,
+    FieldlessTypeInUnion,
+    ReturnTypeMismatch(String, String),
+    NoReturnInFunction,
+    BadTraitMethod(String),
+    TypeVariantNotFound(NamespacedIdentifier, String),
 }
 
 impl Display for ValidatorError {
@@ -46,6 +60,11 @@ impl Display for ValidatorError {
             ValidatorError::UnknownField(name, field) => {
                 write!(f, "Unknown field {} on type {}", field, name)
             }
+            ValidatorError::UnknownFieldInUnion(field) => write!(
+                f,
+                "None of the variants of union have a field named {}",
+                field
+            ),
             ValidatorError::UnknownMethod(name, method) => {
                 write!(f, "Unknown method {} on type {}", method, name)
             }
@@ -65,7 +84,10 @@ impl Display for ValidatorError {
             ValidatorError::ArgTypeMismatch(name, index, expected, actual) => write!(
                 f,
                 "Argument {} of function {} must be of type {}, found type {}",
-                index, name, expected, actual
+                index + 1,
+                name,
+                expected,
+                actual
             ),
             ValidatorError::TypeMismatch(expected, actual) => {
                 write!(f, "Expected type {}, found type {}", expected, actual)
@@ -83,6 +105,9 @@ impl Display for ValidatorError {
             ValidatorError::AccessOnNonType(ty) => {
                 write!(f, "Cannot access members of non-type {}", ty)
             }
+            ValidatorError::MethodOnNonType(ty) => {
+                write!(f, "Cannot call methods on non-type {}", ty)
+            }
             ValidatorError::IndexOnNonList(ty) => {
                 write!(f, "Cannot index non-list type {}", ty)
             }
@@ -90,19 +115,39 @@ impl Display for ValidatorError {
                 write!(f, "Cannot index type {} with non-integer {}", ty, index)
             }
             ValidatorError::ConstructorOfVariantedType(ty) => {
-                write!(f, "Cannot construct type {} with constructor. It contains variants. Choose one.", ty)
+                write!(
+                    f,
+                    "Cannot construct type {} with constructor. It contains variants. Choose one.",
+                    ty
+                )
             }
             ValidatorError::ConstructorFieldTypeMismatch(ty, field, expected, actual) => {
-                write!(f, "Cannot construct type {}. Field {} must be of type {}, found type {}", ty, field, expected, actual)
+                write!(
+                    f,
+                    "Cannot construct type {}. Field {} must be of type {}, found type {}",
+                    ty, field, expected, actual
+                )
             }
             ValidatorError::ConstructorFieldMissing(ty, field) => {
-                write!(f, "Cannot construct type {}. Field {} is missing.", ty, field)
+                write!(
+                    f,
+                    "Cannot construct type {}. Field {} is missing.",
+                    ty, field
+                )
             }
             ValidatorError::ConstructorFieldDuplicate(ty, field) => {
-                write!(f, "Cannot construct type {}. Field {} is duplicated.", ty, field)
+                write!(
+                    f,
+                    "Cannot construct type {}. Field {} is duplicated.",
+                    ty, field
+                )
             }
             ValidatorError::ConstructorFieldDoesNotExist(ty, field) => {
-                write!(f, "Cannot construct type {}. Field {} does not exist.", ty, field)
+                write!(
+                    f,
+                    "Cannot construct type {}. Field {} does not exist.",
+                    ty, field
+                )
             }
             ValidatorError::SelfInStaticFunction(name) => {
                 write!(f, "Cannot use self in static function {}", name)
@@ -111,7 +156,11 @@ impl Display for ValidatorError {
                 write!(f, "Duplicate parameter {}", name)
             }
             ValidatorError::NamespacedVariable(name) => {
-                write!(f, "Variable {} cannot be namespaced. Global variables are not supported.", name)
+                write!(
+                    f,
+                    "Variable {} cannot be namespaced. Global variables are not supported.",
+                    name
+                )
             }
             ValidatorError::SelfOutsideOfTraitOrType => {
                 write!(f, "self can only be used inside of a trait or type")
@@ -136,6 +185,49 @@ impl Display for ValidatorError {
             }
             ValidatorError::PreconditionCollapseFailed => {
                 write!(f, "Precondition collapse failed")
+            }
+            ValidatorError::IncompatibleTypes(expected, actual) => {
+                write!(f, "Cannot assign type {} to type {}", actual, expected)
+            }
+            ValidatorError::InvalidAssignment => {
+                write!(f, "The target of this assignment is not assignable")
+            }
+            ValidatorError::BadConditionType(ty) => {
+                write!(f, "Condition must be of type bool, found type {}", ty)
+            }
+            ValidatorError::BadIterableType(ty) => {
+                write!(f, "Iterable must be of type list, found type {}", ty)
+            }
+            ValidatorError::BadReturnType(expected, actual) => {
+                write!(f, "Return type must be {}, found type {}", expected, actual)
+            }
+            ValidatorError::BreakOutsideOfLoop => {
+                write!(f, "break can only be used inside of a loop")
+            }
+            ValidatorError::ContinueOutsideOfLoop => {
+                write!(f, "continue can only be used inside of a loop")
+            }
+            ValidatorError::FieldlessTypeInUnion => {
+                write!(
+                    f,
+                    "Cannot have a fieldless type in a union and try to access a field"
+                )
+            }
+            ValidatorError::ReturnTypeMismatch(expected, actual) => {
+                write!(f, "Return type must be {}, found type {}", expected, actual)
+            }
+            ValidatorError::NoReturnInFunction => {
+                write!(f, "Function must return a value")
+            }
+            ValidatorError::BadTraitMethod(method) => {
+                write!(
+                    f,
+                    "Implementation of trait method {} is invalid: signature does not match",
+                    method
+                )
+            }
+            ValidatorError::TypeVariantNotFound(ty, variant) => {
+                write!(f, "Type {} does not have variant {}", ty, variant)
             }
         }
     }

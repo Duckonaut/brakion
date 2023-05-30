@@ -11,4 +11,6 @@ mod b {
 fn main(args: [str]) -> i32 {
     a::x();
     b::c::y();
+
+    return 0;
 }

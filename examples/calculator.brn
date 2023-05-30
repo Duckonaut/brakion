@@ -1,3 +1,38 @@
+mod std {
+    trait Display {
+        fn display(self) -> str;
+    }
+    mod io {
+        fn println(s: str) {}
+    }
+    mod i32 {
+        fn to_str(x: i32) -> str {
+            # empty
+            return "";
+        }
+    }
+    mod bool {
+        fn to_str(x: bool) -> str {
+            # empty
+            return "";
+        }
+    }
+    mod char {
+        fn is_digit(c: char) -> bool {
+            return false;
+        }
+
+        fn is_whitespace(c: char) -> bool {
+            return false;
+        }
+    }
+    mod str {
+        fn len(s: str) -> u64 {
+            return 0;
+        }
+    }
+}
+
 type Value {
     Integer {
         value: i32,
@@ -10,9 +45,10 @@ type Value {
 impl std::Display for Value {
     fn display(self) -> str {
         match self {
-            on Self::Integer return self.value.to_string();
-            on Self::Boolean return self.value.to_string();
+            on Self::Integer return std::i32::to_str(self.value);
+            on Self::Boolean return std::bool::to_str(self.value);
         }
+        return "";
     }
 }
 
@@ -48,7 +84,7 @@ type BinaryOperator {
             on "<="     return Self::LessEqual;
             on "and"    return Self::And;
             on "or"     return Self::Or;
-            else        return Maybe::None;
+            else        return void;
         }
     }
 
@@ -175,11 +211,11 @@ type Token {
 
 type Expression {
     Unary {
-        operator: Unary,
+        operator: UnaryOperator,
         operand: Expression
     }
     Binary {
-        operator: Binary,
+        operator: BinaryOperator,
         left: Expression,
         right: Expression,
     }
@@ -219,7 +255,7 @@ type Lexer {
     }
 
     pub fn lex(self) -> [Token] {
-        while self.current < self.source.len() {
+        while self.current < std::str::len(self.source) {
             self.lex_token();
         }
 
@@ -227,7 +263,7 @@ type Lexer {
     }
 
     fn skip_whitespace(self) {
-        while self.source[self.current].is_whitespace() {
+        while std::char::is_whitespace(self.source[self.current]) {
             self.advance();
         }
     }
@@ -324,7 +360,6 @@ type Parser {
     }
 
     pub fn parse(self) -> Expression | void {
-        self.current_token = self.tokens[0];
         return self.parse_expression();
     }
 
@@ -339,14 +374,27 @@ type Parser {
     fn parse_or(self) -> Expression | void {
         var left = self.parse_and();
 
+        if left is void {
+            return void;
+        }
+
+        var left = left as Expression;
+
         while self.current_token().value is BinaryOperator::Or {
-            var operator = self.current_token.value;
+            var operator = self.current_token().value;
             self.advance();
             var right = self.parse_and();
+
+            if right is void {
+                return void;
+            }
+
+            var right = right as Expression;
+
             left = Expression::Binary -> {
-                operator: operator,
-                left: left,
-                right: right,
+                operator: operator as BinaryOperator,
+                left,
+                right,
             };
         }
         return left;
@@ -355,12 +403,24 @@ type Parser {
     fn parse_and(self) -> Expression | void {
         var left = self.parse_equality();
 
+        if left is void {
+            return void;
+        }
+
+        var left = left as Expression;
+
         while self.current_token().value is BinaryOperator::And {
-            var operator = self.current_token.value;
+            var operator = self.current_token().value;
             self.advance();
             var right = self.parse_equality();
+
+            if right is void {
+                return void;
+            }
+
+            var right = right as Expression;
             left = Expression::Binary -> {
-                operator,
+                operator: operator as BinaryOperator,
                 left,
                 right,
             };
@@ -371,13 +431,25 @@ type Parser {
     fn parse_equality(self) -> Expression | void {
         var left = self.parse_comparison();
 
+        if left is void {
+            return void;
+        }
+
+        var left = left as Expression;
+
         while self.current_token().value is BinaryOperator::Equal
             or self.current_token().value is BinaryOperator::NotEqual {
-            var operator = self.current_token.value;
+            var operator = self.current_token().value;
             self.advance();
             var right = self.parse_comparison();
+
+            if right is void {
+                return void;
+            }
+
+            var right = right as Expression;
             left = Expression::Binary -> {
-                operator,
+                operator: operator as BinaryOperator,
                 left,
                 right,
             };
@@ -388,15 +460,27 @@ type Parser {
     fn parse_comparison(self) -> Expression | void {
         var left = self.parse_addition();
 
+        if left is void {
+            return void;
+        }
+
+        var left = left as Expression;
+
         while self.current_token().value is BinaryOperator::Greater
             or self.current_token().value is BinaryOperator::GreaterEqual
             or self.current_token().value is BinaryOperator::Less
             or self.current_token().value is BinaryOperator::LessEqual {
-            var operator = self.current_token.value;
+            var operator = self.current_token().value;
             self.advance();
             var right = self.parse_addition();
+
+            if right is void {
+                return void;
+            }
+
+            var right = right as Expression;
             left = Expression::Binary -> {
-                operator,
+                operator: operator as BinaryOperator,
                 left,
                 right,
             };
@@ -407,13 +491,25 @@ type Parser {
     fn parse_addition(self) -> Expression | void {
         var left = self.parse_multiplication();
 
+        if left is void {
+            return void;
+        }
+
+        var left = left as Expression;
+
         while self.current_token().value is BinaryOperator::Add
             or self.current_token().value is BinaryOperator::Subtract {
-            var operator = self.current_token.value;
+            var operator = self.current_token().value;
             self.advance();
             var right = self.parse_multiplication();
+
+            if right is void {
+                return void;
+            }
+
+            var right = right as Expression;
             left = Expression::Binary -> {
-                operator,
+                operator: operator as BinaryOperator,
                 left,
                 right,
             };
@@ -424,13 +520,25 @@ type Parser {
     fn parse_multiplication(self) -> Expression | void {
         var left = self.parse_unary();
 
+        if left is void {
+            return void;
+        }
+
+        var left = left as Expression;
+
         while self.current_token().value is BinaryOperator::Multiply
             or self.current_token().value is BinaryOperator::Divide {
-            var operator = self.current_token.value;
+            var operator = self.current_token().value;
             self.advance();
             var right = self.parse_unary();
+
+            if right is void {
+                return void;
+            }
+
+            var right = right as Expression;
             left = Expression::Binary -> {
-                operator,
+                operator: operator as BinaryOperator,
                 left,
                 right,
             };
@@ -444,8 +552,8 @@ type Parser {
             self.advance();
             var operand = self.parse_unary();
             return Expression::Unary -> {
-                operator,
-                operand,
+                operator: operator as UnaryOperator,
+                operand: operand as Expression,
             };
         }
         return self.parse_primary();
@@ -456,7 +564,7 @@ type Parser {
         if token.value is Value {
             self.advance();
             return Expression::Value -> {
-                value: token.value,
+                value: token.value as Value,
             };
         }
 
@@ -464,7 +572,7 @@ type Parser {
             self.advance();
             var expression = self.parse_expression();
             if self.current_token().value is Parenthesis::Close {
-                self.advance().unwrap;
+                self.advance();
                 return expression;
             }
         }
@@ -482,9 +590,11 @@ fn main(args: [str]) {
     var expression = parser.parse();
 
     if expression {
+        var expression = expression as Expression;
         var value = expression.evaluate();
         if value {
-            std::io::println(value.to_str());
+            var value = value as Value;
+            std::io::println(std::Display::display(value));
         } else {
             std::io::println("Error: Didn't evaluate to a value");
         }

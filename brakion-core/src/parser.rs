@@ -1393,8 +1393,29 @@ where
             let ty = self.parse_namespaced_identifier()?;
             let ty_span = ty.span();
 
+            let kind = if ty.namespace.is_empty() {
+                match ty.ident.name.as_str() {
+                    "u8" => TypeReferenceKind::Integer(IntSize::I8, false),
+                    "u16" => TypeReferenceKind::Integer(IntSize::I16, false),
+                    "u32" => TypeReferenceKind::Integer(IntSize::I32, false),
+                    "u64" => TypeReferenceKind::Integer(IntSize::I64, false),
+                    "i8" => TypeReferenceKind::Integer(IntSize::I8, true),
+                    "i16" => TypeReferenceKind::Integer(IntSize::I16, true),
+                    "i32" => TypeReferenceKind::Integer(IntSize::I32, true),
+                    "i64" => TypeReferenceKind::Integer(IntSize::I64, true),
+                    "f32" => TypeReferenceKind::Float(FloatSize::F32),
+                    "f64" => TypeReferenceKind::Float(FloatSize::F64),
+                    "bool" => TypeReferenceKind::Bool,
+                    "str" => TypeReferenceKind::String,
+                    "char" => TypeReferenceKind::Char,
+                    _ => TypeReferenceKind::Named(ty),
+                }
+            } else {
+                TypeReferenceKind::Named(ty)
+            };
+
             Ok(TypeReference {
-                kind: TypeReferenceKind::Named(ty),
+                kind,
                 span: Some(ty_span),
             })
         }
