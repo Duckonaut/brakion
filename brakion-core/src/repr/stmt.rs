@@ -2,13 +2,13 @@ use crate::unit::Span;
 
 use super::{Expr, Identifier, TypeReference};
 
-#[derive(Debug, Hash, PartialEq)]
+#[derive(Debug, Hash, PartialEq, Clone)]
 pub struct Stmt {
     pub span: Span,
     pub kind: StmtKind,
 }
 
-#[derive(Debug, Hash, PartialEq)]
+#[derive(Debug, Hash, PartialEq, Clone)]
 pub enum StmtKind {
     Expr(Expr),
     Block(Vec<Stmt>),
@@ -44,13 +44,13 @@ pub enum StmtKind {
     Continue,
 }
 
-#[derive(Debug, Hash, PartialEq)]
+#[derive(Debug, Hash, PartialEq, Clone)]
 pub struct MatchArm {
     pub pattern: MatchPattern,
     pub body: Box<Stmt>,
 }
 
-#[derive(Debug, Hash, PartialEq)]
+#[derive(Debug, Hash, PartialEq, Clone)]
 pub enum MatchPattern {
     // ambiguous patterns like `foo::Bar` or `[foo::Bar]` will be
     // parsed as expressions

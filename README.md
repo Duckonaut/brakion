@@ -164,9 +164,6 @@ for s in l {
 To check a variable for its variant, one of 3 ways can be used:
     - The `is` operator
         - `a is Foo` returns a bool if it is.
-    - The coalesce-access operator
-        - `a?Foo.method()` calls a method on `a` only if `a` is `Foo`
-        - Can be omitted if `method` has the equivalent outward-facing signature (differing only in the type of `self`) for *all* variants
     - The function argument preconditions, discussed below.
 
 ### Match

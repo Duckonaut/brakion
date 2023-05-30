@@ -4,13 +4,13 @@ use crate::unit::Span;
 
 use super::{Identifier, NamespacedIdentifier, TypeReference};
 
-#[derive(Debug, Hash, PartialEq)]
+#[derive(Debug, Hash, PartialEq, Clone)]
 pub struct Expr {
     pub kind: ExprKind,
     pub span: Span,
 }
 
-#[derive(Debug, Hash, PartialEq)]
+#[derive(Debug, Hash, PartialEq, Clone)]
 pub enum ExprKind {
     Literal(Literal),
     Unary {
@@ -51,7 +51,7 @@ pub enum ExprKind {
     },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Literal {
     Int(u64),
     Float(f64),
@@ -133,7 +133,7 @@ pub enum TypeBinaryOp {
     As,
 }
 
-#[derive(Debug, Hash, PartialEq)]
+#[derive(Debug, Hash, PartialEq, Clone)]
 pub enum FieldConstructor {
     Named { name: Identifier, value: Expr },
     Auto(Identifier),

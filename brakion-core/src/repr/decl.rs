@@ -342,6 +342,25 @@ impl TypeReferenceKind {
         )
     }
 
+    pub fn same(&self, other: &Self) -> bool {
+        match (self, other) {
+            (TypeReferenceKind::Infer, TypeReferenceKind::Infer) => true,
+            (TypeReferenceKind::Void, TypeReferenceKind::Void) => true,
+            (TypeReferenceKind::Bool, TypeReferenceKind::Bool) => true,
+            (TypeReferenceKind::String, TypeReferenceKind::String) => true,
+            (TypeReferenceKind::Char, TypeReferenceKind::Char) => true,
+            (TypeReferenceKind::Named(a), TypeReferenceKind::Named(b)) => a == b,
+            (TypeReferenceKind::List(a), TypeReferenceKind::List(b)) => a.kind.same(&b.kind),
+            (TypeReferenceKind::Union(a), TypeReferenceKind::Union(b)) => {
+                a.iter().all(|a| b.iter().any(|b| a.kind.same(&b.kind)))
+            }
+            (TypeReferenceKind::FloatIndeterminate, TypeReferenceKind::FloatIndeterminate) => true,
+            (TypeReferenceKind::Integer(a, a_s), TypeReferenceKind::Integer(b, b_s)) => a == b && a_s == b_s,
+            (TypeReferenceKind::Float(a), TypeReferenceKind::Float(b)) => a == b,
+            _ => false,
+        }
+    }
+
     /// Checks if a variable of `self` can be assigned a value of `other`.
     /// - `Infer` can be assigned anything
     /// - `Void` can be assigned a value of `Void`.

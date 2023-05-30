@@ -4,9 +4,9 @@ use crate::{
     errors::{validator::ValidatorError, ErrorModule},
     repr::{
         look_up_decl, BinaryOp, BrakionTreeVisitor, Decl, Expr, ExprKind, FieldConstructor,
-        Function, FunctionSignature, IntSize, Literal, NamespaceReference, NamespacedIdentifier,
-        Stmt, TraitBody, TypeBinaryOp, TypeBody, TypeReference, TypeReferenceKind, TypeVariant,
-        UnaryOp,
+        Function, FunctionSignature, Identifier, IntSize, Literal, NamespaceReference,
+        NamespacedIdentifier, Parameter, ParameterSpec, Stmt, StmtKind, TraitBody, TypeBinaryOp,
+        TypeBody, TypeReference, TypeReferenceKind, TypeVariant, UnaryOp,
     },
     unit::Span,
 };
@@ -15,11 +15,14 @@ pub struct Validator<'a> {
     error_module: ErrorModule,
     // so we can modify it in place.
     execution_scopes: Vec<ExecutionScope>,
-    module_stack: Vec<(String, UnsafeCell<&'a mut [Decl]>)>,
+    root: UnsafeCell<&'a mut [Decl]>,
+    module_stack: Vec<String>,
+    current_type: Option<NamespacedIdentifier>,
+    current_trait: Option<NamespacedIdentifier>,
 }
 
 struct ExecutionScope {
-    variables: Vec<(NamespacedIdentifier, TypeReference)>,
+    variables: Vec<(Identifier, TypeReference)>,
 }
 
 impl<'a> Validator<'a> {
@@ -27,7 +30,10 @@ impl<'a> Validator<'a> {
         Self {
             error_module,
             execution_scopes: Vec::new(),
-            module_stack: vec![("root".to_string(), UnsafeCell::new(decls))],
+            root: UnsafeCell::new(decls),
+            module_stack: vec![],
+            current_type: None,
+            current_trait: None,
         }
     }
 
@@ -36,10 +42,10 @@ impl<'a> Validator<'a> {
     }
 
     fn root(&self) -> &'a mut [Decl] {
-        unsafe { *self.module_stack[0].1.get() }
+        unsafe { *self.root.get() }
     }
 
-    fn look_up_variable(&self, name: &NamespacedIdentifier) -> Option<TypeReference> {
+    fn look_up_variable(&self, name: &Identifier) -> Option<TypeReference> {
         for scope in self.execution_scopes.iter().rev() {
             for (var_name, var_type) in scope.variables.iter().rev() {
                 if var_name.same(name) {
@@ -101,6 +107,530 @@ impl<'a> Validator<'a> {
 
     fn end_scope(&mut self) {
         self.execution_scopes.pop();
+    }
+
+    fn set_var_type(&mut self, name: Identifier, type_ref: TypeReference) {
+        self.execution_scopes
+            .last_mut()
+            .unwrap()
+            .variables
+            .push((name, type_ref));
+    }
+
+    fn begin_module(&mut self, name: String) {
+        self.module_stack.push(name);
+    }
+
+    fn end_module(&mut self) {
+        self.module_stack.pop();
+    }
+
+    /// Check if preconditions can be collapsed, and collapse them if they can.
+    ///
+    /// You can visualize this as a table, where each row is a function variant, and each column is
+    /// a parameter. Function parameter preconditions act as a pattern to match the runtime
+    /// arguments against.
+    ///
+    /// The goal of this function is to collapse the functions into a single function, which wraps
+    /// the bodies of the original functions in checks to ensure that the preconditions are met.
+    ///
+    /// For example, if we have the following functions:
+    /// ```brn
+    /// fn foo(a: Foo ? Foo::A, b: Bar) -> Baz
+    /// fn foo(a: Foo ? Foo::B, b: Bar) -> Baz
+    /// ```
+    /// We can collapse them into a single function:
+    /// ```brn
+    /// fn foo(a: Foo, b: Bar) -> Baz {
+    ///     if a is Foo::A {
+    ///         <body of first function>
+    ///     }
+    ///     else if a is Foo::B {
+    ///         <body of second function>
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// A more complex example:
+    /// ```brn
+    /// fn foo(a: Foo ? Foo::A, b: Bar ? Bar::A) -> Baz
+    /// fn foo(a: Foo ? Foo::A, b: Bar ? Bar::B) -> Baz
+    /// fn foo(a: Foo ? Foo::B, b: Bar ? Bar::A) -> Baz
+    /// fn foo(a: Foo, b: Bar) -> Baz
+    /// ```
+    ///
+    /// The last function is a catch-all, and is required if the preconditions are not exhaustive.
+    /// The preconditions are exhaustive if there is a precondition for every possible combination
+    /// of variants.
+    ///
+    /// The above functions can be collapsed into:
+    /// ```brn
+    /// fn foo(a: Foo, b: Bar) -> Baz {
+    ///     if a is Foo::A {
+    ///         if b is Bar::A {
+    ///             <body of first function>
+    ///             return;
+    ///         }
+    ///         else if b is Bar::B {
+    ///             <body of second function>
+    ///         }
+    ///     }
+    ///     else if a is Foo::B {
+    ///         if b is Bar::A {
+    ///             <body of third function>
+    ///         }
+    ///     }
+    ///
+    ///     <body of catch-all function>
+    /// }
+    /// ```
+    ///
+    /// Requirements:
+    /// - All functions must have the same name
+    /// - All functions must have the same return type
+    /// - All functions must have the same number of parameters
+    /// - All functions must have the same parameter types
+    /// - All functions must have the same parameter names
+    /// - If a column has a precondition, then there are two possibilities:
+    ///     - All rows must have a precondition for that column, and be exhaustive
+    ///     - There must be a single catch-all function, in which no other parameters have
+    ///       preconditions
+    pub(crate) fn collapse_preconditioned_functions(
+        &mut self,
+        functions: &mut [Function],
+    ) -> Result<Function, (ValidatorError, Option<Span>)> {
+        assert!(!functions.is_empty());
+        assert!(functions.len() > 1);
+
+        // Check that all functions have the same name.
+        let name = functions.first().unwrap().signature.name.clone();
+
+        for function in functions.iter() {
+            if !function.signature.name.same(&name) {
+                return Err((
+                    ValidatorError::PreconditionCollapseFailed,
+                    Some(function.signature.name.span),
+                ));
+            }
+        }
+
+        // Build a table of the possible variants for each parameter.
+        let mut variant_names = Vec::new();
+
+        let should_take_self = functions.first().unwrap().signature.takes_self;
+
+        if should_take_self {
+            // First, add the variants for the self parameter, if there is one.
+            if let Some(type_name) = &self.current_type {
+                let mut self_variants = Vec::new();
+
+                let type_body = self
+                    .look_up_type_body(type_name)
+                    .expect("type body should exist");
+
+                if type_body.variants.len() == 1 {
+                    self_variants.push(TypeReferenceKind::Named(type_name.clone()));
+                } else {
+                    for variant in type_body.variants.iter() {
+                        self_variants.push(TypeReferenceKind::Named(
+                            type_name.down(variant.name.clone()),
+                        ));
+                    }
+                }
+
+                variant_names.push(self_variants);
+            }
+        }
+
+        // Then, add the variants for each parameter.
+        for param in functions.first().unwrap().signature.parameters.iter() {
+            let mut param_variants = Vec::new();
+            match &param.ty.kind {
+                TypeReferenceKind::Named(name) => {
+                    let type_body = self.look_up_type_body(name);
+
+                    if let Some(type_body) = type_body {
+                        if type_body.variants.len() == 1 {
+                            param_variants.push(TypeReferenceKind::Named(name.clone()));
+                        } else {
+                            for variant in type_body.variants.iter() {
+                                param_variants.push(TypeReferenceKind::Named(
+                                    name.down(variant.name.clone()),
+                                ));
+                            }
+                        }
+                    }
+                }
+                TypeReferenceKind::Union(types) => {
+                    for ty in types.iter() {
+                        param_variants.push(ty.kind.clone());
+                    }
+                }
+                _ => return Err((ValidatorError::PreconditionCollapseFailed, None)),
+            }
+
+            variant_names.push(param_variants);
+        }
+
+        // Check that all functions have the same number of parameters, return type, and parameter
+        // types and names.
+        let parameter_types = functions
+            .first()
+            .unwrap()
+            .signature
+            .parameters
+            .iter()
+            .map(|p| p.ty.kind.clone())
+            .collect::<Vec<_>>();
+
+        let parameter_names = functions
+            .first()
+            .unwrap()
+            .signature
+            .parameters
+            .iter()
+            .map(|p| p.name.name.clone())
+            .collect::<Vec<_>>();
+
+        let return_type = functions
+            .first()
+            .unwrap()
+            .signature
+            .return_type
+            .kind
+            .clone();
+
+        for function in functions.iter_mut() {
+            if function.signature.return_type.kind != return_type {
+                return Err((
+                    ValidatorError::PreconditionCollapseFailed,
+                    Some(function.signature.name.span),
+                ));
+            }
+
+            if function.signature.takes_self != should_take_self {
+                return Err((
+                    ValidatorError::PreconditionCollapseFailed,
+                    Some(function.signature.name.span),
+                ));
+            }
+
+            if function.signature.parameters.len() != parameter_types.len() {
+                return Err((
+                    ValidatorError::PreconditionCollapseFailed,
+                    Some(function.signature.name.span),
+                ));
+            }
+
+            for (param, name) in function
+                .signature
+                .parameters
+                .iter_mut()
+                .zip(parameter_names.iter())
+            {
+                if param.name.name != *name {
+                    return Err((
+                        ValidatorError::PreconditionCollapseFailed,
+                        Some(param.name.span),
+                    ));
+                }
+            }
+
+            for (param, ty) in function
+                .signature
+                .parameters
+                .iter_mut()
+                .zip(parameter_types.iter())
+            {
+                if param.ty.kind != *ty {
+                    return Err((
+                        ValidatorError::PreconditionCollapseFailed,
+                        Some(param.name.span),
+                    ));
+                }
+            }
+        }
+
+        // Check if catch-alls column-wise are valid, i.e. if there is a single row with a precondition
+        // in a column, then there must be either a single catch-all function, being the same row
+        // in all columns, or the preconditions must be exhaustive.
+
+        let parameter_precondition_matrix = functions
+            .iter()
+            .map(|f| {
+                f.signature
+                    .parameters
+                    .iter()
+                    .map(|p| match &p.kind {
+                        ParameterSpec::Basic => None,
+                        ParameterSpec::Preconditioned(p) => Some(p.kind.clone()),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        // Check if precondition columns are valid.
+        for (i, row) in parameter_precondition_matrix.iter().enumerate() {
+            for (j, precondition) in row.iter().enumerate() {
+                if precondition.is_some()
+                    && !variant_names[j]
+                        .iter()
+                        .any(|v| v.same(precondition.as_ref().unwrap()))
+                {
+                    return Err((
+                        ValidatorError::PreconditionCollapseFailed,
+                        Some(functions[i].signature.name.span),
+                    ));
+                }
+            }
+        }
+
+        // Check if there are no rows with duplicate preconditions.
+        for (i, row) in parameter_precondition_matrix.iter().enumerate() {
+            for (k, other_row) in parameter_precondition_matrix.iter().enumerate() {
+                if i != k
+                    && row.iter().zip(other_row.iter()).all(|(a, b)| {
+                        (a.is_none() && b.is_none())
+                            && (a.is_some()
+                                && b.is_some()
+                                && a.as_ref().unwrap().same(b.as_ref().unwrap()))
+                    })
+                {
+                    return Err((
+                        ValidatorError::PreconditionCollapseFailed,
+                        Some(functions[i].signature.name.span),
+                    ));
+                }
+            }
+        }
+
+        let mut columns_have_preconditions = vec![false; parameter_precondition_matrix[0].len()];
+
+        for row in parameter_precondition_matrix.iter() {
+            for (i, precondition) in row.iter().enumerate() {
+                if precondition.is_some() {
+                    columns_have_preconditions[i] = true;
+                }
+            }
+        }
+
+        let mut catch_all_counts = vec![0; parameter_precondition_matrix[0].len()];
+
+        for row in parameter_precondition_matrix.iter() {
+            for (i, precondition) in row.iter().enumerate() {
+                if precondition.is_none() {
+                    catch_all_counts[i] += 1;
+                }
+            }
+        }
+
+        for (i, count) in catch_all_counts.iter().enumerate() {
+            if *count == 0 && columns_have_preconditions[i] {
+                // Check if exhaustive.
+                let mut variants_covered = vec![];
+                for row in parameter_precondition_matrix.iter() {
+                    variants_covered.push(row[i].as_ref().unwrap().clone());
+                }
+
+                if !variant_names[i]
+                    .iter()
+                    .all(|v| variants_covered.contains(v))
+                {
+                    return Err((
+                        ValidatorError::PreconditionCollapseFailed,
+                        Some(functions[0].signature.name.span),
+                    ));
+                }
+            } else if *count > 1 {
+                return Err((
+                    ValidatorError::PreconditionCollapseFailed,
+                    Some(functions[0].signature.name.span),
+                ));
+            }
+        }
+
+        let mut catch_all = None;
+
+        for (i, function) in functions.iter_mut().enumerate() {
+            if catch_all.is_none() {
+                if parameter_precondition_matrix[i].iter().all(|p| p.is_none()) {
+                    catch_all = Some(function.body.clone());
+                }
+            } else if parameter_precondition_matrix[i].iter().all(|p| p.is_none()) {
+                return Err((
+                    ValidatorError::PreconditionCollapseFailed,
+                    Some(function.signature.name.span),
+                ));
+            }
+        }
+
+        // At this point, we checked everything we could, we can now collapse the functions.
+
+        let precond_stripped_params = functions
+            .first()
+            .unwrap()
+            .signature
+            .parameters
+            .iter()
+            .map(|p| match &p.kind {
+                ParameterSpec::Basic => p.clone(),
+                ParameterSpec::Preconditioned(_) => Parameter {
+                    name: p.name.clone(),
+                    ty: p.ty.clone(),
+                    kind: ParameterSpec::Basic,
+                },
+            })
+            .collect::<Vec<_>>();
+
+            dbg!(&precond_stripped_params);
+
+        let collapsed_function_signature = FunctionSignature {
+            name,
+            parameters: precond_stripped_params,
+            return_type: functions.first().unwrap().signature.return_type.clone(),
+            takes_self: functions.first().unwrap().signature.takes_self,
+            self_precondition: None,
+        };
+
+        let mut collapsed_body_statements = vec![];
+
+        for (i, function) in functions.iter().enumerate() {
+            let preconditions = &parameter_precondition_matrix[i];
+
+            let og_span = Span::from_spans(
+                function.body.first().unwrap().span,
+                function.body.last().unwrap().span,
+            );
+
+            let branch = Stmt {
+                span: og_span,
+                kind: StmtKind::Block(function.body.clone()),
+            };
+
+            let mut condition = None;
+
+            for (param_name, precond) in parameter_names.iter().zip(preconditions).rev() {
+                if precond.is_none() {
+                    continue;
+                }
+
+                let precond = precond.as_ref().unwrap();
+
+                if condition.is_none() {
+                    condition = Some(Expr {
+                        span: og_span,
+                        kind: ExprKind::TypeBinary {
+                            op: TypeBinaryOp::Is,
+                            expr: Box::new(Expr {
+                                span: og_span,
+                                kind: ExprKind::Variable(NamespacedIdentifier {
+                                    namespace: vec![],
+                                    ident: Identifier::new(og_span, param_name.clone()),
+                                }),
+                            }),
+                            ty: TypeReference {
+                                span: None,
+                                kind: precond.clone(),
+                            },
+                        },
+                    });
+                } else {
+                    condition = Some(Expr {
+                        span: og_span,
+                        kind: ExprKind::Binary {
+                            op: BinaryOp::And,
+                            left: Box::new(condition.unwrap()),
+                            right: Box::new(Expr {
+                                span: og_span,
+                                kind: ExprKind::TypeBinary {
+                                    op: TypeBinaryOp::Is,
+                                    expr: Box::new(Expr {
+                                        span: og_span,
+                                        kind: ExprKind::Variable(NamespacedIdentifier {
+                                            namespace: vec![],
+                                            ident: Identifier::new(og_span, param_name.clone()),
+                                        }),
+                                    }),
+                                    ty: TypeReference {
+                                        span: None,
+                                        kind: precond.clone(),
+                                    },
+                                },
+                            }),
+                        },
+                    });
+                }
+            }
+
+            if let Some(condition) = condition {
+                collapsed_body_statements.push(Stmt {
+                    span: og_span,
+                    kind: StmtKind::If {
+                        condition,
+                        then: Box::new(branch),
+                        otherwise: None,
+                    },
+                });
+            }
+            else {
+                collapsed_body_statements.push(branch);
+            }
+        }
+
+        let collapsed_function = Function {
+            signature: collapsed_function_signature,
+            body: collapsed_body_statements,
+        };
+
+        Ok(collapsed_function)
+    }
+
+    fn validate_function(
+        &mut self,
+        function: &mut Function,
+    ) -> Result<(), (ValidatorError, Option<Span>)> {
+        self.validate_function_signature(&mut function.signature)?;
+
+        self.begin_scope();
+
+        for param in function.signature.parameters.iter() {
+            self.execution_scopes
+                .last_mut()
+                .unwrap()
+                .variables
+                .push((param.name.clone(), param.ty.clone()));
+        }
+
+        Ok(())
+    }
+
+    fn validate_function_signature(
+        &mut self,
+        signature: &mut FunctionSignature,
+    ) -> Result<(), (ValidatorError, Option<Span>)> {
+        if signature.takes_self && self.current_type.is_none() && self.current_trait.is_none() {
+            self.error(
+                ValidatorError::SelfInStaticFunction(signature.name.name.clone()),
+                Some(signature.name.span),
+            );
+        }
+
+        let mut seen: Vec<&str> = Vec::new();
+
+        for param in signature.parameters.iter_mut() {
+            if seen.iter().any(|s| *s == param.name.name) {
+                return Err((
+                    ValidatorError::DuplicateParameter(param.name.name.clone()),
+                    Some(param.name.span),
+                ));
+            }
+
+            seen.push(&param.name.name);
+
+            self.visit_type_reference(&mut param.ty)?;
+        }
+
+        Ok(())
     }
 
     fn validate_function_call(
@@ -218,11 +748,7 @@ impl<'a> Validator<'a> {
         let root = self.root();
 
         for decl in root.iter_mut() {
-            let result = Self::visit_decl(self, decl);
-
-            if let Err(err) = result {
-                self.error(err.0, err.1);
-            }
+            Self::visit_decl(self, decl);
         }
     }
 }
@@ -230,11 +756,149 @@ impl<'a> Validator<'a> {
 impl<'a> BrakionTreeVisitor for Validator<'a> {
     type ExprResult = Result<TypeReferenceKind, (ValidatorError, Option<Span>)>;
     type StmtResult = Result<(), (ValidatorError, Option<Span>)>;
-    type DeclResult = Result<(), (ValidatorError, Option<Span>)>;
+    type DeclResult = ();
     type TypeReferenceResult = Result<TypeReferenceKind, (ValidatorError, Option<Span>)>;
 
     fn visit_decl(&mut self, decl: &mut Decl) -> Self::DeclResult {
-        todo!()
+        match decl {
+            Decl::Module { name, body, .. } => {
+                self.begin_module(name.name.clone());
+
+                for decl in body.iter_mut() {
+                    Self::visit_decl(self, decl);
+                }
+
+                self.end_module();
+            }
+            Decl::Function { function, .. } => {
+                let result = self.validate_function(function);
+
+                if let Err(err) = result {
+                    self.error(err.0, err.1);
+                }
+            }
+            Decl::Type { name, body, .. } => {
+                self.current_type = Some(NamespacedIdentifier::new_from_strs(
+                    &self.module_stack,
+                    name.name.clone(),
+                ));
+
+                let mut seen = Vec::new();
+
+                for variant in body.variants.iter_mut() {
+                    if seen.contains(&variant.name.name) {
+                        self.error(
+                            ValidatorError::DuplicateVariant(variant.name.name.clone()),
+                            Some(variant.name.span),
+                        );
+                    }
+
+                    seen.push(variant.name.name.clone());
+
+                    let mut seen_fields = Vec::new();
+
+                    for field in variant.fields.iter_mut() {
+                        if seen_fields.contains(&field.name.name) {
+                            self.error(
+                                ValidatorError::DuplicateField(field.name.name.clone()),
+                                Some(field.name.span),
+                            );
+                        }
+
+                        seen_fields.push(field.name.name.clone());
+
+                        let result = self.visit_type_reference(&mut field.ty);
+
+                        if let Err(err) = result {
+                            self.error(err.0, err.1);
+                        }
+                    }
+                }
+
+                for method in body.methods.iter_mut() {
+                    let result = self.validate_function(&mut method.1);
+
+                    if let Err(err) = result {
+                        self.error(err.0, err.1);
+                    }
+                }
+
+                self.current_type = None;
+            }
+            Decl::Trait { name, body, .. } => {
+                self.current_trait = Some(NamespacedIdentifier::new_from_strs(
+                    &self.module_stack,
+                    name.name.clone(),
+                ));
+
+                for method in body.methods.iter_mut() {
+                    let result = self.validate_function_signature(method);
+
+                    if let Err(err) = result {
+                        self.error(err.0, err.1);
+                    }
+                }
+
+                self.current_trait = None;
+            }
+            Decl::Impl {
+                trait_name,
+                type_name,
+                body,
+            } => {
+                let impl_trait_body = self.look_up_trait_body(trait_name);
+
+                if impl_trait_body.is_none() {
+                    self.error(
+                        ValidatorError::UnknownTrait(trait_name.clone()),
+                        Some(trait_name.span()),
+                    );
+                }
+
+                let impl_type_body = self.look_up_type_body(type_name);
+
+                if impl_type_body.is_none() {
+                    self.error(
+                        ValidatorError::UnknownType(type_name.clone()),
+                        Some(type_name.span()),
+                    );
+                }
+
+                let impl_trait_body = impl_trait_body.unwrap();
+
+                let mut seen = Vec::new();
+
+                self.current_type = Some(type_name.clone());
+
+                for function in body.iter_mut() {
+                    if seen.contains(&function.signature.name.name) {
+                        self.error(
+                            ValidatorError::DuplicateFunction(function.signature.name.name.clone()),
+                            Some(function.signature.name.span),
+                        );
+                    }
+
+                    seen.push(function.signature.name.name.clone());
+
+                    let result = self.validate_function(function);
+
+                    if let Err(err) = result {
+                        self.error(err.0, err.1);
+                    }
+                }
+
+                for trait_sig in impl_trait_body.methods.iter() {
+                    if !seen.contains(&trait_sig.name.name) {
+                        self.error(
+                            ValidatorError::MissingTraitMethod(trait_sig.name.name.clone()),
+                            Some(trait_sig.name.span),
+                        );
+                    }
+                }
+
+                self.current_type = None;
+            }
+        }
     }
 
     fn visit_stmt(&mut self, stmt: &mut Stmt) -> Self::StmtResult {
@@ -395,7 +1059,23 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                 }
             }
             ExprKind::Variable(v) => {
-                let var = self.look_up_variable(v);
+                if v.ident.name == "self" {
+                    if self.current_type.is_none() && self.current_trait.is_none() {
+                        return Err((ValidatorError::SelfOutsideOfTraitOrType, Some(expr.span)));
+                    }
+
+                    if self.current_type.is_some() {
+                        return Ok(TypeReferenceKind::Named(self.current_type.clone().unwrap()));
+                    }
+
+                    if self.current_trait.is_some() {
+                        return Ok(TypeReferenceKind::Named(
+                            self.current_trait.clone().unwrap(),
+                        ));
+                    }
+                }
+
+                let var = self.look_up_variable(&v.ident);
 
                 if var.is_none() {
                     return Err((ValidatorError::UnknownVariable(v.clone()), Some(expr.span)));
@@ -718,7 +1398,7 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                                 ));
                             }
 
-                            let variable = self.look_up_variable(&name.namespaced());
+                            let variable = self.look_up_variable(name);
 
                             if variable.is_none() {
                                 return Err((
@@ -785,6 +1465,40 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
     }
 
     fn visit_type_reference(&mut self, ty: &mut TypeReference) -> Self::TypeReferenceResult {
+        match &mut ty.kind {
+            TypeReferenceKind::Named(name) => {
+                let type_body = self.look_up_type_body(name);
+
+                if type_body.is_none() {
+                    let trait_body = self.look_up_trait_body(name);
+
+                    if trait_body.is_none() {
+                        return Err((ValidatorError::UnknownType(name.clone()), Some(name.span())));
+                    }
+                }
+            }
+            TypeReferenceKind::List(t) => {
+                self.visit_type_reference(t)?;
+            }
+            TypeReferenceKind::Union(types) => {
+                let mut types_accounted_for = Vec::new();
+
+                for ty in types {
+                    self.visit_type_reference(ty)?;
+
+                    if types_accounted_for.contains(&ty) {
+                        return Err((
+                            ValidatorError::UnionTypeDuplicate(ty.kind.to_string()),
+                            ty.span,
+                        ));
+                    }
+
+                    types_accounted_for.push(ty);
+                }
+            }
+            _ => {}
+        }
+
         Ok(ty.kind.clone())
     }
 }

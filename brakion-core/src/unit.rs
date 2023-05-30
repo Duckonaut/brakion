@@ -198,7 +198,7 @@ impl Hash for Unit {
     }
 }
 
-#[derive(Debug, Copy, PartialEq, Hash)]
+#[derive(Debug, Copy, PartialEq, Hash, Default)]
 pub struct Span {
     pub unit: UnitIdentifier,
     pub start: Location,
@@ -243,7 +243,7 @@ impl Clone for Span {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Location {
     pub line: usize,
     pub line_start: usize,

@@ -24,6 +24,17 @@ pub enum ValidatorError {
     ConstructorFieldMissing(NamespacedIdentifier, String),
     ConstructorFieldDuplicate(NamespacedIdentifier, String),
     ConstructorFieldDoesNotExist(NamespacedIdentifier, String),
+    SelfInStaticFunction(String),
+    DuplicateParameter(String),
+    NamespacedVariable(NamespacedIdentifier),
+    SelfOutsideOfTraitOrType,
+    UnionTypeDuplicate(String),
+    DuplicateVariant(String),
+    DuplicateType(String),
+    DuplicateField(String),
+    DuplicateFunction(String),
+    MissingTraitMethod(String),
+    PreconditionCollapseFailed,
 }
 
 impl Display for ValidatorError {
@@ -92,6 +103,39 @@ impl Display for ValidatorError {
             }
             ValidatorError::ConstructorFieldDoesNotExist(ty, field) => {
                 write!(f, "Cannot construct type {}. Field {} does not exist.", ty, field)
+            }
+            ValidatorError::SelfInStaticFunction(name) => {
+                write!(f, "Cannot use self in static function {}", name)
+            }
+            ValidatorError::DuplicateParameter(name) => {
+                write!(f, "Duplicate parameter {}", name)
+            }
+            ValidatorError::NamespacedVariable(name) => {
+                write!(f, "Variable {} cannot be namespaced. Global variables are not supported.", name)
+            }
+            ValidatorError::SelfOutsideOfTraitOrType => {
+                write!(f, "self can only be used inside of a trait or type")
+            }
+            ValidatorError::UnionTypeDuplicate(name) => {
+                write!(f, "Union type {} is duplicated", name)
+            }
+            ValidatorError::DuplicateVariant(name) => {
+                write!(f, "Variant {} is duplicated", name)
+            }
+            ValidatorError::DuplicateType(name) => {
+                write!(f, "Type {} is duplicated", name)
+            }
+            ValidatorError::DuplicateField(name) => {
+                write!(f, "Field {} is duplicated", name)
+            }
+            ValidatorError::DuplicateFunction(name) => {
+                write!(f, "Function {} is duplicated", name)
+            }
+            ValidatorError::MissingTraitMethod(name) => {
+                write!(f, "Trait method {} is missing", name)
+            }
+            ValidatorError::PreconditionCollapseFailed => {
+                write!(f, "Precondition collapse failed")
             }
         }
     }

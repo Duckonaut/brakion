@@ -55,6 +55,19 @@ pub struct NamespacedIdentifier {
 }
 
 impl NamespacedIdentifier {
+    pub fn new(namespace: Vec<Identifier>, ident: Identifier) -> Self {
+        Self { namespace, ident }
+    }
+
+    pub fn new_from_strs(namespace: &[String], ident: String) -> Self {
+        let namespace = namespace
+            .into_iter()
+            .map(|name| Identifier::new(Span::default(), name))
+            .collect();
+        let ident = Identifier::new(Span::default(), ident);
+        Self { namespace, ident }
+    }
+
     /// Build the span from the underlying identifiers.
     pub fn span(&self) -> Span {
         if !self.namespace.is_empty() {
@@ -90,6 +103,12 @@ impl NamespacedIdentifier {
             namespace,
             ident,
         }
+    }
+
+    pub fn down(&self, ident: Identifier) -> Self {
+        let mut namespace = self.namespace.clone();
+        namespace.push(self.ident.clone());
+        Self { namespace, ident }
     }
 }
 
