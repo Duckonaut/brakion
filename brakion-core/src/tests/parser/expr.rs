@@ -1127,13 +1127,7 @@ fn is_chain() {
                     span: test_span(1, 9),
                 }),
                 ty: TypeReference {
-                    kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                        namespace: vec![],
-                        ident: Identifier {
-                            span: test_span(13, 17),
-                            name: "bool".to_string(),
-                        },
-                    }),
+                    kind: TypeReferenceKind::Bool,
                     span: Some(test_span(13, 17)),
                 },
             },
@@ -1218,13 +1212,7 @@ fn as_chain() {
                     span: test_span(1, 16),
                 }),
                 ty: TypeReference {
-                    kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                        namespace: vec![],
-                        ident: Identifier {
-                            span: test_span(20, 24),
-                            name: "bool".to_string(),
-                        },
-                    }),
+                    kind: TypeReferenceKind::Bool,
                     span: Some(test_span(20, 24)),
                 },
             },

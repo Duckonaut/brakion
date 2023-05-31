@@ -132,17 +132,7 @@ fn function_signature_return_basic() {
                             Location::new(1, 0, 14),
                             Location::new(1, 0, 16),
                         )),
-                        kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                            namespace: vec![],
-                            ident: Identifier {
-                                span: Span::new(
-                                    0,
-                                    Location::new(1, 0, 14),
-                                    Location::new(1, 0, 16),
-                                ),
-                                name: "u8".to_string(),
-                            },
-                        }),
+                        kind: TypeReferenceKind::Integer(IntSize::I8, false),
                     },
                 },
                 body: vec![],
@@ -225,17 +215,7 @@ fn function_signature_return_list() {
                     parameters: vec![],
                     return_type: TypeReference {
                         kind: TypeReferenceKind::List(Box::new(TypeReference {
-                            kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                                namespace: vec![],
-                                ident: Identifier {
-                                    span: Span::new(
-                                        0,
-                                        Location::new(1, 0, 15),
-                                        Location::new(1, 0, 17),
-                                    ),
-                                    name: "u8".to_string(),
-                                },
-                            }),
+                            kind: TypeReferenceKind::Integer(IntSize::I8, false),
                             span: Some(Span::new(
                                 0,
                                 Location::new(1, 0, 15),
@@ -289,17 +269,7 @@ fn function_signature_with_params() {
                             name: "b".to_string(),
                         },
                         ty: TypeReference {
-                            kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                                namespace: vec![],
-                                ident: Identifier {
-                                    span: Span::new(
-                                        0,
-                                        Location::new(1, 0, 21),
-                                        Location::new(1, 0, 23),
-                                    ),
-                                    name: "u8".to_string(),
-                                },
-                            }),
+                            kind: TypeReferenceKind::Integer(IntSize::I8, false),
                             span: Some(Span::new(
                                 0,
                                 Location::new(1, 0, 21),
@@ -315,17 +285,7 @@ fn function_signature_with_params() {
                         },
                         ty: TypeReference {
                             kind: TypeReferenceKind::List(Box::new(TypeReference {
-                                kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                                    namespace: vec![],
-                                    ident: Identifier {
-                                        span: Span::new(
-                                            0,
-                                            Location::new(1, 0, 29),
-                                            Location::new(1, 0, 31),
-                                        ),
-                                        name: "u8".to_string(),
-                                    },
-                                }),
+                                kind: TypeReferenceKind::Integer(IntSize::I8, false),
                                 span: Some(Span::new(
                                     0,
                                     Location::new(1, 0, 29),
@@ -392,17 +352,7 @@ fn function_signature_with_params() {
                 ],
                 return_type: TypeReference {
                     kind: TypeReferenceKind::List(Box::new(TypeReference {
-                        kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                            namespace: vec![],
-                            ident: Identifier {
-                                span: Span::new(
-                                    0,
-                                    Location::new(1, 0, 57),
-                                    Location::new(1, 0, 59),
-                                ),
-                                name: "u8".to_string(),
-                            },
-                        }),
+                        kind: TypeReferenceKind::Integer(IntSize::I8, false),
                         span: Some(Span::new(
                             0,
                             Location::new(1, 0, 57),
@@ -561,13 +511,7 @@ fn type_self_variant_field() {
                             span: test_span(19, 20),
                         },
                         ty: TypeReference {
-                            kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                                namespace: vec![],
-                                ident: Identifier {
-                                    name: "u8".to_string(),
-                                    span: test_span(22, 24),
-                                },
-                            }),
+                            kind: TypeReferenceKind::Integer(IntSize::I8, false),
                             span: Some(test_span(22, 24)),
                         },
                     }],
@@ -596,13 +540,7 @@ fn type_self_variant_field() {
                             span: test_span(19, 20),
                         },
                         ty: TypeReference {
-                            kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                                namespace: vec![],
-                                ident: Identifier {
-                                    name: "u8".to_string(),
-                                    span: test_span(22, 24),
-                                },
-                            }),
+                            kind: TypeReferenceKind::Integer(IntSize::I8, false),
                             span: Some(test_span(22, 24)),
                         },
                     }],
@@ -660,13 +598,7 @@ fn type_single_variant_fields() {
                                 span: test_span(18, 19),
                             },
                             ty: TypeReference {
-                                kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                                    namespace: vec![],
-                                    ident: Identifier {
-                                        name: "u8".to_string(),
-                                        span: test_span(21, 23),
-                                    },
-                                }),
+                                kind: TypeReferenceKind::Integer(IntSize::I8, false),
                                 span: Some(test_span(21, 23)),
                             },
                         },
@@ -676,13 +608,7 @@ fn type_single_variant_fields() {
                                 span: test_span(25, 26),
                             },
                             ty: TypeReference {
-                                kind: TypeReferenceKind::Named(NamespacedIdentifier {
-                                    namespace: vec![],
-                                    ident: Identifier {
-                                        name: "u8".to_string(),
-                                        span: test_span(28, 30),
-                                    },
-                                }),
+                                kind: TypeReferenceKind::Integer(IntSize::I8, false),
                                 span: Some(test_span(28, 30)),
                             },
                         },
