@@ -222,6 +222,8 @@ impl Display for TypeReferenceKind {
 pub enum NamespaceReference<'a> {
     Decl(&'a Decl),
     TypeVariant(&'a TypeVariant),
+    TraitMethod(&'a FunctionSignature),
+    TypeMethod(&'a Function),
 }
 
 pub fn look_up_decl<'a>(
@@ -248,6 +250,7 @@ pub fn look_up_decl<'a>(
             .find(|decl| match decl {
                 Decl::Module { name: id, .. } => id.name == *outer_namespace,
                 Decl::Type { name: id, .. } => id.name == *outer_namespace,
+                Decl::Trait { name: id, .. } => id.name == *outer_namespace,
                 _ => false,
             })
             .and_then(|decl| match decl {
@@ -262,13 +265,28 @@ pub fn look_up_decl<'a>(
                     if !inner_namespace.is_empty() {
                         return None;
                     }
-                    look_up_type_variant(
+                    let variant = look_up_type_variant(
                         body,
                         &NamespacedIdentifier {
                             namespace: inner_namespace.to_vec(),
                             ident: name.ident.clone(),
                         },
-                    )
+                    );
+
+                    if let Some(variant) = variant {
+                        return Some(variant);
+                    }
+
+                    let function = body
+                        .methods
+                        .iter()
+                        .find(|function| function.1.signature.name.name == name.ident.name);
+
+                    if let Some(function) = function {
+                        return Some(NamespaceReference::TypeMethod(&function.1));
+                    }
+
+                    None
                 }
                 _ => None,
             })
@@ -351,6 +369,80 @@ pub fn type_implements_trait(
     };
 
     Ok(type_trait_impl.is_some())
+}
+
+pub fn list_method_signatures(type_ref: &TypeReference) -> Vec<FunctionSignature> {
+    vec![
+        FunctionSignature {
+            name: Identifier {
+                name: "push".to_string(),
+                span: Span::default(),
+            },
+            takes_self: true,
+            parameters: vec![Parameter {
+                name: Identifier {
+                    name: "value".to_string(),
+                    span: Span::default(),
+                },
+                ty: type_ref.clone(),
+                kind: ParameterSpec::Basic,
+            }],
+            self_precondition: None,
+            return_type: TypeReference {
+                kind: TypeReferenceKind::Void,
+                span: None,
+            },
+        },
+        FunctionSignature {
+            name: Identifier {
+                name: "pop".to_string(),
+                span: Span::default(),
+            },
+            takes_self: true,
+            parameters: vec![],
+            self_precondition: None,
+            return_type: type_ref.clone(),
+        },
+    ]
+}
+
+pub fn string_method_signatures() -> Vec<FunctionSignature> {
+    vec![FunctionSignature {
+        name: Identifier {
+            name: "substr".to_string(),
+            span: Span::default(),
+        },
+        takes_self: true,
+        parameters: vec![
+            Parameter {
+                name: Identifier {
+                    name: "start".to_string(),
+                    span: Span::default(),
+                },
+                ty: TypeReference {
+                    kind: TypeReferenceKind::Integer(IntSize::I64, false),
+                    span: None,
+                },
+                kind: ParameterSpec::Basic,
+            },
+            Parameter {
+                name: Identifier {
+                    name: "end".to_string(),
+                    span: Span::default(),
+                },
+                ty: TypeReference {
+                    kind: TypeReferenceKind::Integer(IntSize::I64, false),
+                    span: None,
+                },
+                kind: ParameterSpec::Basic,
+            },
+        ],
+        self_precondition: None,
+        return_type: TypeReference {
+            kind: TypeReferenceKind::String,
+            span: None,
+        },
+    }]
 }
 
 impl TypeReferenceKind {
@@ -483,10 +575,7 @@ impl TypeReferenceKind {
                         if variants.iter().any(|v| v == b_variant) {
                             Ok(true)
                         } else {
-                            Err(ValidatorError::TypeVariantNotFound(
-                                a.clone(),
-                                b_variant.name.name.clone(),
-                            ))
+                            Ok(false)
                         }
                     }
                     (
@@ -494,7 +583,6 @@ impl TypeReferenceKind {
                         NamespaceReference::TypeVariant(b_variant),
                     ) => {
                         let type_decl = look_up_decl(decls, &b.up());
-
                         if let Some(NamespaceReference::Decl(Decl::Type {
                             body: TypeBody { variants, .. },
                             ..

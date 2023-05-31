@@ -49,6 +49,7 @@ pub enum ValidatorError {
     NoReturnInFunction,
     BadTraitMethod(String),
     TypeVariantNotFound(NamespacedIdentifier, String),
+    DuplicateWildcard,
 }
 
 impl Display for ValidatorError {
@@ -228,6 +229,9 @@ impl Display for ValidatorError {
             }
             ValidatorError::TypeVariantNotFound(ty, variant) => {
                 write!(f, "Type {} does not have variant {}", ty, variant)
+            }
+            ValidatorError::DuplicateWildcard => {
+                write!(f, "Duplicate wildcard pattern in match")
             }
         }
     }

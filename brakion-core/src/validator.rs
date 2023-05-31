@@ -3,11 +3,11 @@ use std::cell::UnsafeCell;
 use crate::{
     errors::{validator::ValidatorError, ErrorModule},
     repr::{
-        look_up_decl, look_up_module, look_up_module_mut, BinaryOp, BrakionTreeVisitor, Decl, Expr,
-        ExprKind, FieldConstructor, FloatSize, Function, FunctionSignature, Identifier, IntSize,
-        Literal, NamespaceReference, NamespacedIdentifier, Parameter, ParameterSpec, Stmt,
-        StmtKind, TraitBody, TypeBinaryOp, TypeBody, TypeReference, TypeReferenceKind, TypeVariant,
-        UnaryOp,
+        list_method_signatures, look_up_decl, look_up_module_mut, BinaryOp, BrakionTreeVisitor,
+        Decl, Expr, ExprKind, FieldConstructor, Function, FunctionSignature, Identifier, IntSize,
+        Literal, MatchPattern, NamespaceReference, NamespacedIdentifier, Parameter, ParameterSpec,
+        Stmt, StmtKind, TraitBody, TypeBinaryOp, TypeBody, TypeReference, TypeReferenceKind,
+        TypeVariant, UnaryOp, string_method_signatures,
     },
     unit::Span,
 };
@@ -60,6 +60,30 @@ impl<'a> Validator<'a> {
         }
     }
 
+    fn expand_self_namespaced_identifier(&self, name: &mut NamespacedIdentifier) {
+        if name.namespace.is_empty() && name.ident.name == "Self" {
+            if self.current_type.is_some() {
+                name.ident = self.current_type.clone().unwrap().ident;
+            } else if self.current_trait.is_some() {
+                name.ident = self.current_trait.clone().unwrap().ident;
+            }
+        } else if name.namespace.len() == 1 && name.namespace[0].name == "Self" {
+            let self_span = name.namespace[0].span;
+
+            if self.current_type.is_some() {
+                name.namespace = vec![Identifier {
+                    name: self.current_type.as_ref().unwrap().ident.name.clone(),
+                    span: self_span,
+                }];
+            } else if self.current_trait.is_some() {
+                name.namespace = vec![Identifier {
+                    name: self.current_trait.as_ref().unwrap().ident.name.clone(),
+                    span: self_span,
+                }];
+            }
+        }
+    }
+
     fn look_up_variable(&self, name: &Identifier) -> Option<TypeReference> {
         for scope in self.execution_scopes.iter().rev() {
             for (var_name, var_type) in scope.variables.iter().rev() {
@@ -73,6 +97,8 @@ impl<'a> Validator<'a> {
     }
 
     fn look_up_type_body(&self, name: &mut NamespacedIdentifier) -> Option<&'a TypeBody> {
+        self.expand_self_namespaced_identifier(name);
+
         let decls_to_check = self.get_current_module_decls();
 
         let decl = look_up_decl(decls_to_check, name);
@@ -96,6 +122,8 @@ impl<'a> Validator<'a> {
     }
 
     fn look_up_trait_body(&self, name: &mut NamespacedIdentifier) -> Option<&'a TraitBody> {
+        self.expand_self_namespaced_identifier(name);
+
         let decls_to_check = self.get_current_module_decls();
 
         let decl = look_up_decl(decls_to_check, name);
@@ -119,6 +147,8 @@ impl<'a> Validator<'a> {
     }
 
     fn look_up_type_variant(&self, name: &mut NamespacedIdentifier) -> Option<&'a TypeVariant> {
+        self.expand_self_namespaced_identifier(name);
+
         let decls_to_check = self.get_current_module_decls();
 
         let decl = look_up_decl(decls_to_check, name);
@@ -142,6 +172,8 @@ impl<'a> Validator<'a> {
     }
 
     fn look_up_function(&self, name: &mut NamespacedIdentifier) -> Option<&'a Function> {
+        self.expand_self_namespaced_identifier(name);
+
         let decls_to_check = self.get_current_module_decls();
 
         let decl = look_up_decl(decls_to_check, name);
@@ -155,9 +187,22 @@ impl<'a> Validator<'a> {
             return Some(function);
         }
 
-        let decl = look_up_decl(self.root(), name)?;
+        if let Some(NamespaceReference::TypeMethod(function)) = decl {
+            for module in self.module_stack.iter().rev() {
+                name.namespace
+                    .insert(0, Identifier::new(name.span(), module.clone()));
+            }
 
-        if let NamespaceReference::Decl(Decl::Function { function, .. }) = decl {
+            return Some(function);
+        }
+
+        let decl = look_up_decl(self.root(), name);
+
+        if let Some(NamespaceReference::Decl(Decl::Function { function, .. })) = decl {
+            return Some(function);
+        }
+
+        if let Some(NamespaceReference::TypeMethod(function)) = decl {
             return Some(function);
         }
 
@@ -175,6 +220,19 @@ impl<'a> Validator<'a> {
     }
 
     fn set_var_type(&mut self, name: Identifier, type_ref: TypeReference) {
+        for (var_name, var_type) in self
+            .execution_scopes
+            .last_mut()
+            .unwrap()
+            .variables
+            .iter_mut()
+            .rev()
+        {
+            if var_name.same(&name) {
+                *var_type = type_ref;
+                return;
+            }
+        }
         self.execution_scopes
             .last_mut()
             .unwrap()
@@ -664,7 +722,7 @@ impl<'a> Validator<'a> {
         self.begin_scope();
 
         if function.signature.takes_self {
-            let mut self_type = if self.current_type.is_some() {
+            let self_type = if self.current_type.is_some() {
                 self.current_type.as_ref().unwrap().clone()
             } else if self.current_trait.is_some() {
                 self.current_trait.as_ref().unwrap().clone()
@@ -674,13 +732,6 @@ impl<'a> Validator<'a> {
                     Some(function.signature.name.span),
                 ));
             };
-
-            for module in self.module_stack.iter().rev() {
-                self_type.namespace.insert(
-                    0,
-                    Identifier::new(function.signature.name.span, module.clone()),
-                );
-            }
 
             self.set_var_type(
                 Identifier::new(function.signature.name.span, "self".to_string()),
@@ -792,9 +843,6 @@ impl<'a> Validator<'a> {
         args: &mut [Expr],
     ) -> Result<(), (ValidatorError, Option<Span>)> {
         if signature.takes_self {
-            if name.ident.name == "display" {
-                dbg!(&self_type_ref);
-            }
             let self_type_ref = self.visit_type_reference(&mut TypeReference {
                 kind: self_type_ref.as_ref().unwrap().clone(),
                 span: None,
@@ -1002,6 +1050,60 @@ impl<'a> Validator<'a> {
                     self.current_trait = None;
                 }
             }
+        }
+    }
+
+    fn expr_to_type_reference(&mut self, expr: &Expr) -> Option<TypeReference> {
+        match expr.kind {
+            ExprKind::Literal(Literal::Void) => Some(TypeReference {
+                kind: TypeReferenceKind::Void,
+                span: Some(expr.span),
+            }),
+            ExprKind::Literal(Literal::List(ref list)) => {
+                if list.len() == 1 {
+                    self.expr_to_type_reference(&list[0])
+                        .map(|ty| TypeReference {
+                            kind: TypeReferenceKind::List(Box::new(ty)),
+                            span: Some(expr.span),
+                        })
+                } else {
+                    None
+                }
+            }
+            ExprKind::Variable(ref name) => {
+                let mut full_name = name.clone();
+                let result = self.look_up_type_body(&mut full_name);
+
+                if result.is_some() {
+                    return Some(TypeReference {
+                        kind: TypeReferenceKind::Named(full_name),
+                        span: Some(expr.span),
+                    });
+                }
+
+                let mut full_name = name.clone();
+                let result = self.look_up_trait_body(&mut full_name);
+
+                if result.is_some() {
+                    return Some(TypeReference {
+                        kind: TypeReferenceKind::Named(full_name),
+                        span: Some(expr.span),
+                    });
+                }
+
+                let mut full_name = name.clone();
+                let result = self.look_up_type_variant(&mut full_name);
+
+                if result.is_some() {
+                    return Some(TypeReference {
+                        kind: TypeReferenceKind::Named(full_name),
+                        span: Some(expr.span),
+                    });
+                }
+
+                None
+            }
+            _ => None,
         }
     }
 
@@ -1368,8 +1470,93 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                             Some(ident.span),
                         );
                     }
+
+                    let var = var.unwrap();
+
+                    let mut wildcard_encountered = false;
+
+                    for arm in arms {
+                        self.begin_scope();
+
+                        if let MatchPattern::Expr(e) = &mut arm.pattern {
+                            if let Some(ty) = self.expr_to_type_reference(e) {
+                                let compatible = match var.kind.is_compatible(&ty.kind, self.root())
+                                {
+                                    Ok(compatible) => compatible,
+                                    Err(err) => {
+                                        self.end_scope();
+                                        return Err((err, Some(e.span)));
+                                    }
+                                };
+
+                                if !compatible {
+                                    self.error(
+                                        ValidatorError::IncompatibleTypes(
+                                            var.kind.to_string(),
+                                            ty.kind.to_string(),
+                                        ),
+                                        Some(e.span),
+                                    );
+                                }
+
+                                arm.pattern = MatchPattern::Type(ty);
+                            }
+                        }
+
+                        match &mut arm.pattern {
+                            MatchPattern::Expr(e) => {
+                                self.visit_expr(e)?;
+                            }
+                            MatchPattern::Type(t) => {
+                                t.kind = self.visit_type_reference(t)?;
+
+                                let compatible = match var.kind.is_compatible(&t.kind, self.root())
+                                {
+                                    Ok(compatible) => compatible,
+                                    Err(err) => {
+                                        self.end_scope();
+                                        return Err((err, t.span));
+                                    }
+                                };
+
+                                if !compatible {
+                                    self.error(
+                                        ValidatorError::IncompatibleTypes(
+                                            var.kind.to_string(),
+                                            t.kind.to_string(),
+                                        ),
+                                        t.span,
+                                    );
+                                }
+
+                                self.set_var_type(
+                                    ident.clone(),
+                                    TypeReference {
+                                        kind: t.kind.clone(),
+                                        span: t.span,
+                                    },
+                                );
+                            }
+                            MatchPattern::Wildcard => {
+                                if wildcard_encountered {
+                                    self.error(
+                                        ValidatorError::DuplicateWildcard,
+                                        Some(arm.body.span),
+                                    );
+                                } else {
+                                    wildcard_encountered = true;
+                                }
+                            }
+                        }
+
+                        self.visit_stmt(&mut arm.body)?;
+
+                        self.end_scope();
+                    }
                 }
-                None => {}
+                None => {
+                    unimplemented!();
+                }
             },
             StmtKind::Return(r) => {
                 assert!(self.current_function_return_type.is_some());
@@ -1613,25 +1800,29 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                 }
             }
             ExprKind::Variable(v) => {
-                if v.ident.name == "self" {
-                    if self.current_type.is_none() && self.current_trait.is_none() {
-                        return Err((ValidatorError::SelfOutsideOfTraitOrType, Some(expr.span)));
-                    }
-
-                    if self.current_type.is_some() {
-                        return Ok(TypeReferenceKind::Named(self.current_type.clone().unwrap()));
-                    }
-
-                    if self.current_trait.is_some() {
-                        return Ok(TypeReferenceKind::Named(
-                            self.current_trait.clone().unwrap(),
-                        ));
-                    }
-                }
-
                 let var = self.look_up_variable(&v.ident);
 
                 if var.is_none() {
+                    if v.ident.name == "self" {
+                        if self.current_type.is_none() && self.current_trait.is_none() {
+                            return Err((
+                                ValidatorError::SelfOutsideOfTraitOrType,
+                                Some(expr.span),
+                            ));
+                        }
+
+                        if self.current_type.is_some() {
+                            return Ok(TypeReferenceKind::Named(
+                                self.current_type.clone().unwrap(),
+                            ));
+                        }
+
+                        if self.current_trait.is_some() {
+                            return Ok(TypeReferenceKind::Named(
+                                self.current_trait.clone().unwrap(),
+                            ));
+                        }
+                    }
                     return Err((ValidatorError::UnknownVariable(v.clone()), Some(expr.span)));
                 }
 
@@ -1768,6 +1959,9 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                         .find(|(_, method)| method.signature.name.same(&name.ident));
 
                     if method.is_none() {
+                        if name.ident.name == "from_str" {
+                            dbg!(&type_body);
+                        }
                         return Err((
                             ValidatorError::UnknownFunction(name.clone()),
                             Some(expr.span),
@@ -1876,6 +2070,68 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
 
                         Ok(method.signature.return_type.kind.clone())
                     }
+                    TypeReferenceKind::List(ref t) => {
+                        let valid_methods = list_method_signatures(t);
+
+                        let method = valid_methods
+                            .iter()
+                            .find(|method| method.name.same(method_name));
+
+                        if method.is_none() {
+                            return Err((
+                                ValidatorError::UnknownFunction(
+                                    method_name.clone().into_namespaced(),
+                                ),
+                                Some(expr.span),
+                            ));
+                        }
+
+                        let method = method.unwrap();
+
+                        let mut args_with_self = args.clone();
+
+                        args_with_self.insert(0, (**expr).clone());
+
+                        self.validate_function_call(
+                            &method_name.namespaced(),
+                            method,
+                            &Some(expr_type.clone()),
+                            &mut args_with_self,
+                        )?;
+
+                        Ok(method.return_type.kind.clone())
+                    }
+                    TypeReferenceKind::String => {
+                        let valid_methods = string_method_signatures();
+
+                        let method = valid_methods
+                            .iter()
+                            .find(|method| method.name.same(method_name));
+
+                        if method.is_none() {
+                            return Err((
+                                ValidatorError::UnknownFunction(
+                                    method_name.clone().into_namespaced(),
+                                ),
+                                Some(expr.span),
+                            ));
+                        }
+
+                        let method = method.unwrap();
+
+                        let mut args_with_self = args.clone();
+
+                        args_with_self.insert(0, (**expr).clone());
+
+                        self.validate_function_call(
+                            &method_name.namespaced(),
+                            method,
+                            &Some(expr_type.clone()),
+                            &mut args_with_self,
+                        )?;
+
+                        Ok(method.return_type.kind.clone())
+                    }
                     _ => Err((
                         ValidatorError::MethodOnNonType(expr_type.to_string()),
                         Some(span),
@@ -1923,11 +2179,6 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                 }
             }
             ExprKind::Constructor { ty, fields } => {
-                if ty.namespace.is_empty() && ty.ident.name == "Self" && self.current_type.is_some()
-                {
-                    *ty = self.current_type.clone().unwrap();
-                }
-
                 let type_body = self.look_up_type_body(ty);
 
                 let variant = if let Some(type_body) = type_body {
@@ -2081,18 +2332,6 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
     fn visit_type_reference(&mut self, ty: &mut TypeReference) -> Self::TypeReferenceResult {
         match &mut ty.kind {
             TypeReferenceKind::Named(name) => {
-                if name.namespace.is_empty() {
-                    if let "Self" = name.ident.name.as_str() {
-                        if let Some(n) = &self.current_type {
-                            return Ok(TypeReferenceKind::Named(n.clone()));
-                        }
-
-                        if let Some(n) = &self.current_trait {
-                            return Ok(TypeReferenceKind::Named(n.clone()));
-                        }
-                    }
-                }
-
                 let type_body = self.look_up_type_body(name);
 
                 if type_body.is_some() {

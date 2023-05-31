@@ -10,6 +10,10 @@ mod std {
             # empty
             return "";
         }
+        fn parse(s: str) -> i32 | void {
+            # empty
+            return 0;
+        }
     }
     mod bool {
         fn to_str(x: bool) -> str {
@@ -22,6 +26,10 @@ mod std {
             return false;
         }
 
+        fn is_alpha(c: char) -> bool {
+            return false;
+        }
+
         fn is_whitespace(c: char) -> bool {
             return false;
         }
@@ -30,15 +38,10 @@ mod std {
         fn len(s: str) -> u64 {
             return 0;
         }
-    }
-}
 
-type Value {
-    Integer {
-        value: i32,
-    }
-    Boolean {
-        value: bool,
+        fn is_digit(s: str) -> bool {
+            return false;
+        }
     }
 }
 
@@ -72,18 +75,19 @@ type BinaryOperator {
     # If no patterns match, the else block is executed.
     pub fn from_str(s: str) -> Self | void {
         match s {
-            on "+"      return Self::Add;
-            on "-"      return Self::Subtract;
-            on "*"      return Self::Multiply;
-            on "/"      return Self::Divide;
-            on "=="     return Self::Equal;
-            on "!="     return Self::NotEqual;
-            on ">"      return Self::Greater;
-            on ">="     return Self::GreaterEqual;
-            on "<"      return Self::Less;
-            on "<="     return Self::LessEqual;
-            on "and"    return Self::And;
-            on "or"     return Self::Or;
+            on "+"      return Self::Add -> {};
+            on "-"      return Self::Subtract -> {};
+            on "*"      return Self::Multiply -> {};
+            on "/"      return Self::Divide -> {};
+            on "=="     return Self::Equal -> {};
+            on "!="     return Self::NotEqual -> {};
+            on ">"      return Self::Greater -> {};
+            on ">="     return Self::GreaterEqual -> {};
+            on "<"      return Self::Less -> {};
+            on "<="     return Self::LessEqual -> {};
+            on "and"    return Self::And -> {};
+            on "or"     return Self::Or -> {};
+            on 5        return Self::Add -> {};
             else        return void;
         }
     }
@@ -155,8 +159,8 @@ type UnaryOperator {
 
     pub fn from_str(s: str) -> Self | void {
         match s {
-            on "-"      return Self::Negate;
-            on "not"    return Self::Not;
+            on "-"      return Self::Negate -> {};
+            on "not"    return Self::Not -> {};
             else        return void;
         }
     }
@@ -182,10 +186,14 @@ type Value {
 
     pub fn from_str(s: str) -> Self | void {
         match s {
-            on s.is_digit()   return Self::Integer -> { value: i32::parse(s) };
-            on "true"           return Self::Boolean -> { value: true };
-            on "false"          return Self::Boolean -> { value: false };
-            else                return void;
+            on std::str::is_digit(s)
+                return Self::Integer -> { value: std::i32::parse(s) as i32 };
+            on "true"
+                return Self::Boolean -> { value: true };
+            on "false"
+                return Self::Boolean -> { value: false };
+            else
+                return void;
         }
     }
 }
@@ -196,8 +204,8 @@ type Parenthesis {
 
     pub fn from_str(s: str) -> Self | void {
         match s {
-            on "("  return Self::Open;
-            on ")"  return Self::Close;
+            on "("  return Self::Open -> {};
+            on ")"  return Self::Close -> {};
             else    return void;
         }
     }
@@ -226,10 +234,10 @@ type Expression {
     pub fn evaluate(self) -> Value | void {
         match self {
             on Self::Unary {
-                return self.operator.apply(self.operand.evaluate());
+                return self.operator.apply(self.operand.evaluate() as Value);
             }
             on Self::Binary {
-                return self.operator.apply(self.left.evaluate(), self.right.evaluate());
+                return self.operator.apply(self.left.evaluate() as Value, self.right.evaluate() as Value);
             }
             on Self::Value {
                 return self.value;
@@ -278,16 +286,16 @@ type Lexer {
         self.skip_whitespace();
 
         match c {
-            on '(' self.tokens.push(Token -> { value: Parenthesis::Open });
-            on ')' self.tokens.push(Token -> { value: Parenthesis::Close });
-            on '+' self.tokens.push(Token -> { value: BinaryOperator::Add });
-            on '-' self.tokens.push(Token -> { value: BinaryOperator::Subtract });
-            on '*' self.tokens.push(Token -> { value: BinaryOperator::Multiply });
-            on '/' self.tokens.push(Token -> { value: BinaryOperator::Divide });
+            on '(' self.tokens.push(Token -> { value: Parenthesis::Open -> {} });
+            on ')' self.tokens.push(Token -> { value: Parenthesis::Close -> {} });
+            on '+' self.tokens.push(Token -> { value: BinaryOperator::Add -> {} });
+            on '-' self.tokens.push(Token -> { value: BinaryOperator::Subtract -> {} });
+            on '*' self.tokens.push(Token -> { value: BinaryOperator::Multiply -> {} });
+            on '/' self.tokens.push(Token -> { value: BinaryOperator::Divide -> {} });
             on '=' {
                 self.advance();
                 if self.source[self.current] == '=' {
-                    self.tokens.push(Token -> { value: BinaryOperator::Equal });
+                    self.tokens.push(Token -> { value: BinaryOperator::Equal -> {} });
                 } else {
                     # TODO: Error
                 }
@@ -295,35 +303,35 @@ type Lexer {
             on '!' {
                 self.advance();
                 if self.source[self.current] == '=' {
-                    self.tokens.push(Token -> { value: BinaryOperator::NotEqual });
+                    self.tokens.push(Token -> { value: BinaryOperator::NotEqual -> {} });
                 } else {
-                    self.tokens.push(Token -> { value: UnaryOperator::Not });
+                    self.tokens.push(Token -> { value: UnaryOperator::Not -> {} });
                 }
             }
-            on c.is_digit() {
+            on std::char::is_digit(c) {
                 var start: i32 = self.current;
-                while self.source[self.current].is_integer() {
+                while std::char::is_digit(self.source[self.current]) {
                     self.advance();
                 }
-                self.tokens.push(Token -> { value: Value::from_str(self.source.substr(start, self.current)) });
+                self.tokens.push(Token -> { value: Value::from_str(self.source.substr(start, self.current)) as Value });
             }
-            on c.is_alpha() {
+            on std::char::is_alpha(c) {
                 var start: i32 = self.current;
-                while self.source[self.current].is_alpha() {
+                while std::char::is_alpha(self.source[self.current]) {
                     self.advance();
                 }
                 var substr: str = self.source.substr(start, self.current);
-                var value: Value = Value::from_str(substr);
+                var value = Value::from_str(substr);
                 if value {
-                    self.tokens.push(Token -> { value });
+                    self.tokens.push(Token -> { value: value as Value });
                 } else {
-                    var operator: BinaryOperator = BinaryOperator::from_str(substr);
+                    var operator = BinaryOperator::from_str(substr);
                     if operator {
-                        self.tokens.push(Token -> { value: operator });
+                        self.tokens.push(Token -> { value: operator as BinaryOperator });
                     } else {
-                        var operator: UnaryOperator = UnaryOperator::from_str(substr);
+                        var operator = UnaryOperator::from_str(substr);
                         if operator {
-                            self.tokens.push(Token -> { value: operator });
+                            self.tokens.push(Token -> { value: operator as UnaryOperator });
                         } else {
                             # TODO: Error
                         }
