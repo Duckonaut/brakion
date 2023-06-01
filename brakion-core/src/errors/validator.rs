@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::repr::{BinaryOp, NamespacedIdentifier, UnaryOp};
+use crate::repr::{BinaryOp, NamespacedIdentifier, UnaryOp, Visibility};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValidatorError {
@@ -50,6 +50,7 @@ pub enum ValidatorError {
     BadTraitMethod(String),
     TypeVariantNotFound(NamespacedIdentifier, String),
     DuplicateWildcard,
+    VisibilityMismatch(String, Visibility, Visibility),
 }
 
 impl Display for ValidatorError {
@@ -232,6 +233,9 @@ impl Display for ValidatorError {
             }
             ValidatorError::DuplicateWildcard => {
                 write!(f, "Duplicate wildcard pattern in match")
+            }
+            ValidatorError::VisibilityMismatch(name, expected, actual) => {
+                write!(f, "Visibility mismatch for {}. Expected {}, found {}", name, expected.verbose(), actual.verbose())
             }
         }
     }

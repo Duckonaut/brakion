@@ -1,12 +1,9 @@
 use crate::{
-    errors::validator::ValidatorError,
     repr::{
-        BinaryOp, BrakionTreeVisitor, Decl, Expr, ExprKind, Function, FunctionSignature,
-        Identifier, IntSize, Literal, NamespacedIdentifier, Parameter, ParameterSpec, Stmt,
-        StmtKind, TypeBinaryOp, TypeBody, TypeReference, TypeReferenceKind, TypeVariant, UnaryOp,
-        Visibility,
+        Decl, Expr, ExprKind, Function, FunctionSignature, Identifier, Literal,
+        NamespacedIdentifier, Parameter, ParameterSpec, Stmt, StmtKind, TypeBinaryOp, TypeBody,
+        TypeReference, TypeReferenceKind, TypeVariant, Visibility,
     },
-    tests::test_span,
     unit::Span,
     validator::Validator,
     ErrorModule,
@@ -21,7 +18,7 @@ fn test_ident(name: &str) -> Identifier {
 
 #[test]
 fn collapse_simple() {
-    let mut decls = [Decl::Type {
+    let mut decls = vec![Decl::Type {
         visibility: Visibility::Public,
         name: test_ident("Foo"),
         body: TypeBody {

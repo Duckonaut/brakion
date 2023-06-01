@@ -9,7 +9,7 @@ use crate::{
     ErrorModule,
 };
 
-fn check_type(decls: &mut [Decl], expr: &mut Expr, expected_type: &TypeReferenceKind) {
+fn check_type(decls: &mut Vec<Decl>, expr: &mut Expr, expected_type: &TypeReferenceKind) {
     let error_module = ErrorModule::new();
     let mut validator = Validator::new(error_module, decls);
     let ty = validator.visit_expr(expr);
@@ -25,7 +25,7 @@ fn check_type(decls: &mut [Decl], expr: &mut Expr, expected_type: &TypeReference
     assert_eq!(ty, Ok(expected_type.clone()));
 }
 
-fn expect_error(decls: &mut [Decl], expr: &mut Expr, expected_error: &ValidatorError) {
+fn expect_error(decls: &mut Vec<Decl>, expr: &mut Expr, expected_error: &ValidatorError) {
     let error_module = ErrorModule::new();
     let mut validator = Validator::new(error_module, decls);
     let ty = validator.visit_expr(expr);

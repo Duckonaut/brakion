@@ -1,13 +1,13 @@
-use std::cell::UnsafeCell;
+use std::{cell::UnsafeCell, collections::HashMap};
 
 use crate::{
     errors::{validator::ValidatorError, ErrorModule},
     repr::{
-        list_method_signatures, look_up_decl, look_up_module_mut, BinaryOp, BrakionTreeVisitor,
-        Decl, Expr, ExprKind, FieldConstructor, Function, FunctionSignature, Identifier, IntSize,
-        Literal, MatchPattern, NamespaceReference, NamespacedIdentifier, Parameter, ParameterSpec,
-        Stmt, StmtKind, TraitBody, TypeBinaryOp, TypeBody, TypeReference, TypeReferenceKind,
-        TypeVariant, UnaryOp, string_method_signatures,
+        list_method_signatures, look_up_decl, look_up_module_mut, string_method_signatures,
+        BinaryOp, BrakionTreeVisitor, Decl, Expr, ExprKind, FieldConstructor, Function,
+        FunctionSignature, Identifier, IntSize, Literal, MatchPattern, NamespaceReference,
+        NamespacedIdentifier, Parameter, ParameterSpec, Stmt, StmtKind, TraitBody, TypeBinaryOp,
+        TypeBody, TypeReference, TypeReferenceKind, TypeVariant, UnaryOp, Visibility,
     },
     unit::Span,
 };
@@ -16,7 +16,7 @@ pub struct Validator<'a> {
     error_module: ErrorModule,
     // so we can modify it in place.
     execution_scopes: Vec<ExecutionScope>,
-    root: UnsafeCell<&'a mut [Decl]>,
+    root: UnsafeCell<&'a mut Vec<Decl>>,
     module_stack: Vec<String>,
     current_type: Option<NamespacedIdentifier>,
     current_trait: Option<NamespacedIdentifier>,
@@ -29,7 +29,7 @@ struct ExecutionScope {
 }
 
 impl<'a> Validator<'a> {
-    pub fn new(error_module: ErrorModule, decls: &'a mut [Decl]) -> Self {
+    pub fn new(error_module: ErrorModule, decls: &'a mut Vec<Decl>) -> Self {
         Self {
             error_module,
             execution_scopes: Vec::new(),
@@ -47,6 +47,10 @@ impl<'a> Validator<'a> {
     }
 
     fn root(&self) -> &'a mut [Decl] {
+        unsafe { *self.root.get() }
+    }
+
+    fn root_vec(&self) -> &'a mut Vec<Decl> {
         unsafe { *self.root.get() }
     }
 
@@ -1053,6 +1057,175 @@ impl<'a> Validator<'a> {
         }
     }
 
+    fn collapse_all_functions_with_vis(
+        &mut self,
+        functions: Vec<(Visibility, Function)>,
+    ) -> Result<Vec<(Visibility, Function)>, (ValidatorError, Option<Span>)> {
+        let mut collapse_map: HashMap<String, Vec<Function>> = HashMap::new();
+        let mut visibility_map: HashMap<String, Visibility> = HashMap::new();
+
+        for (visibility, function) in functions {
+            let name = function.signature.name.name.clone();
+
+            if let Some(functions) = collapse_map.get_mut(&name) {
+                functions.push(function);
+            } else {
+                collapse_map.insert(name.clone(), vec![function]);
+            }
+
+            if let Some(v) = visibility_map.get_mut(&name) {
+                if *v != visibility {
+                    return Err((
+                        ValidatorError::VisibilityMismatch(name.clone(), *v, visibility),
+                        None,
+                    ));
+                }
+            } else {
+                visibility_map.insert(name, visibility);
+            }
+        }
+
+        let mut out = Vec::new();
+
+        for ((_, fns), (_, v)) in collapse_map.iter_mut().zip(visibility_map.iter()) {
+            if fns.len() == 1 {
+                out.push((*v, fns.pop().unwrap()));
+                continue;
+            }
+            let collapsed = self.collapse_preconditioned_functions(fns)?;
+
+            out.push((*v, collapsed));
+        }
+
+        Ok(out)
+    }
+
+    fn collapse_all_functions(
+        &mut self,
+        functions: Vec<Function>,
+    ) -> Result<Vec<Function>, (ValidatorError, Option<Span>)> {
+        let mut collapse_map: HashMap<String, Vec<Function>> = HashMap::new();
+
+        for function in functions {
+            let name = function.signature.name.name.clone();
+
+            if let Some(functions) = collapse_map.get_mut(&name) {
+                functions.push(function);
+            } else {
+                collapse_map.insert(name.clone(), vec![function]);
+            }
+        }
+
+        let mut out = Vec::new();
+
+        for (_, fns) in collapse_map.iter_mut() {
+            if fns.len() == 1 {
+                out.push(fns.pop().unwrap());
+                continue;
+            }
+            let collapsed = self.collapse_preconditioned_functions(fns)?;
+
+            out.push(collapsed);
+        }
+
+        Ok(out)
+    }
+
+    /// This function walks through the tree and collapses all function definitions with
+    /// preconditions.
+    fn collapse_all_function_decls(
+        &mut self,
+        decls: &mut Vec<Decl>,
+    ) -> Result<(), (ValidatorError, Option<Span>)> {
+        let function_indices_to_remove: Vec<usize> = decls
+            .iter()
+            .enumerate()
+            .filter_map(|(i, decl)| {
+                if let Decl::Function { .. } = decl {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let functions: Vec<(Visibility, Function)> = function_indices_to_remove
+            .iter()
+            .rev()
+            .map(|i| {
+                if let Decl::Function {
+                    function,
+                    visibility,
+                } = decls.remove(*i)
+                {
+                    (visibility, function)
+                } else {
+                    unreachable!()
+                }
+            })
+            .collect();
+
+        let collapsed = self.collapse_all_functions_with_vis(functions)?;
+
+        for (visibility, function) in collapsed {
+            decls.push(Decl::Function {
+                visibility,
+                function,
+            });
+        }
+
+        for decl in decls.iter_mut() {
+            match decl {
+                Decl::Module { name, body, .. } => {
+                    self.module_stack.push(name.name.clone());
+
+                    self.collapse_all_function_decls(body)?;
+
+                    self.module_stack.pop();
+                }
+                Decl::Type {
+                    name,
+                    body: TypeBody { methods, .. },
+                    ..
+                } => {
+                    self.current_type = Some(NamespacedIdentifier::new_from_parts(
+                        &self.module_stack,
+                        name.name.clone(),
+                        name.span,
+                    ));
+
+                    let methods_mine = methods.drain(..).collect::<Vec<_>>();
+
+                    let collapsed = self.collapse_all_functions_with_vis(methods_mine)?;
+
+                    for (visibility, function) in collapsed {
+                        methods.push((visibility, function));
+                    }
+
+                    self.current_type = None;
+                }
+                Decl::Impl {
+                    type_name, body, ..
+                } => {
+                    self.current_type = Some(type_name.clone());
+
+                    let methods_mine = body.drain(..).collect::<Vec<_>>();
+
+                    let collapsed = self.collapse_all_functions(methods_mine)?;
+
+                    for function in collapsed {
+                        body.push(function);
+                    }
+
+                    self.current_type = None;
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
     fn expr_to_type_reference(&mut self, expr: &Expr) -> Option<TypeReference> {
         match expr.kind {
             ExprKind::Literal(Literal::Void) => Some(TypeReference {
@@ -1111,6 +1284,12 @@ impl<'a> Validator<'a> {
         let root = self.root();
 
         self.validate_function_signatures(root);
+
+        let result = self.collapse_all_function_decls(self.root_vec());
+
+        if let Err((err, span)) = result {
+            self.error(err, span);
+        }
 
         for decl in root.iter_mut() {
             Self::visit_decl(self, decl);

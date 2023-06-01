@@ -14,6 +14,13 @@ impl Visibility {
     pub fn is_public(&self) -> bool {
         matches!(self, Self::Public)
     }
+
+    pub fn verbose(&self) -> &'static str {
+        match self {
+            Self::Public => "public",
+            Self::Private => "private",
+        }
+    }
 }
 
 impl Default for Visibility {
