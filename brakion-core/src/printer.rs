@@ -112,9 +112,11 @@ impl Printer {
             let mut param_node = PrinterNode::new("param".to_string());
             param_node.descriptor("name", &param.name.name);
             param_node.field("type", self.visit_type_reference(&mut param.ty));
-            // if let ParameterSpec::Preconditioned(ty) = &mut param.kind {
-            //     param_node.field("precondition", self.visit_type_reference(ty));
-            // }
+            if let ParameterSpec::Preconditioned(ty) = &mut param.kind {
+                param_node.field("precondition", self.visit_type_reference(ty));
+            }
+
+            node.field("param", param_node);
         }
 
         node

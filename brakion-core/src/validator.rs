@@ -335,7 +335,10 @@ impl<'a> Validator<'a> {
         for function in functions.iter() {
             if !function.signature.name.same(&name) {
                 return Err((
-                    ValidatorError::PreconditionCollapseFailed,
+                    ValidatorError::PreconditionNameMismatch(
+                        name.name.clone(),
+                        function.signature.name.name.clone(),
+                    ),
                     Some(function.signature.name.span),
                 ));
             }
@@ -401,7 +404,12 @@ impl<'a> Validator<'a> {
                         param_variants.push(ty.kind.clone());
                     }
                 }
-                _ => return Err((ValidatorError::PreconditionCollapseFailed, None)),
+                ty => {
+                    return Err((
+                        ValidatorError::PreconditionOnInvalidType(ty.to_string()),
+                        param.ty.span,
+                    ))
+                }
             }
 
             variant_names.push(param_variants);
@@ -427,6 +435,15 @@ impl<'a> Validator<'a> {
             .map(|p| p.name.name.clone())
             .collect::<Vec<_>>();
 
+        let parameter_spans = functions
+            .first()
+            .unwrap()
+            .signature
+            .parameters
+            .iter()
+            .map(|p| p.name.span)
+            .collect::<Vec<_>>();
+
         let return_type = functions
             .first()
             .unwrap()
@@ -436,23 +453,29 @@ impl<'a> Validator<'a> {
             .clone();
 
         for function in functions.iter_mut() {
-            if function.signature.return_type.kind != return_type {
+            if !function.signature.return_type.kind.same(&return_type) {
                 return Err((
-                    ValidatorError::PreconditionCollapseFailed,
+                    ValidatorError::PreconditionReturnMismatch(
+                        return_type.to_string(),
+                        function.signature.return_type.kind.to_string(),
+                    ),
                     Some(function.signature.name.span),
                 ));
             }
 
             if function.signature.takes_self != should_take_self {
                 return Err((
-                    ValidatorError::PreconditionCollapseFailed,
+                    ValidatorError::PreconditionSelfMismatch,
                     Some(function.signature.name.span),
                 ));
             }
 
             if function.signature.parameters.len() != parameter_types.len() {
                 return Err((
-                    ValidatorError::PreconditionCollapseFailed,
+                    ValidatorError::PreconditionParameterCountMismatch(
+                        parameter_types.len(),
+                        function.signature.parameters.len(),
+                    ),
                     Some(function.signature.name.span),
                 ));
             }
@@ -465,7 +488,10 @@ impl<'a> Validator<'a> {
             {
                 if param.name.name != *name {
                     return Err((
-                        ValidatorError::PreconditionCollapseFailed,
+                        ValidatorError::PreconditionParameterMismatch(
+                            name.clone(),
+                            param.name.name.clone(),
+                        ),
                         Some(param.name.span),
                     ));
                 }
@@ -477,9 +503,12 @@ impl<'a> Validator<'a> {
                 .iter_mut()
                 .zip(parameter_types.iter())
             {
-                if param.ty.kind != *ty {
+                if !param.ty.kind.same(ty) {
                     return Err((
-                        ValidatorError::PreconditionCollapseFailed,
+                        ValidatorError::PreconditionParameterTypeMismatch(
+                            ty.to_string(),
+                            param.ty.kind.to_string(),
+                        ),
                         Some(param.name.span),
                     ));
                 }
@@ -498,7 +527,7 @@ impl<'a> Validator<'a> {
                     .iter()
                     .map(|p| match &p.kind {
                         ParameterSpec::Basic => None,
-                        ParameterSpec::Preconditioned(p) => Some(p.kind.clone()),
+                        ParameterSpec::Preconditioned(p) => Some(p.clone()),
                     })
                     .collect::<Vec<_>>()
             })
@@ -510,11 +539,11 @@ impl<'a> Validator<'a> {
                 if precondition.is_some()
                     && !variant_names[j]
                         .iter()
-                        .any(|v| v.same(precondition.as_ref().unwrap()))
+                        .any(|v| v.same(&precondition.as_ref().unwrap().kind))
                 {
                     return Err((
-                        ValidatorError::PreconditionCollapseFailed,
-                        Some(functions[i].signature.name.span),
+                        ValidatorError::PreconditionParameterInvalid(parameter_names[j].clone()),
+                        Some(parameter_spans[j]),
                     ));
                 }
             }
@@ -528,11 +557,13 @@ impl<'a> Validator<'a> {
                         (a.is_none() && b.is_none())
                             && (a.is_some()
                                 && b.is_some()
-                                && a.as_ref().unwrap().same(b.as_ref().unwrap()))
+                                && a.as_ref().unwrap().kind.same(&b.as_ref().unwrap().kind))
                     })
                 {
                     return Err((
-                        ValidatorError::PreconditionCollapseFailed,
+                        ValidatorError::PreconditionDuplicate(
+                            functions[i].signature.name.name.clone(),
+                        ),
                         Some(functions[i].signature.name.span),
                     ));
                 }
@@ -564,7 +595,7 @@ impl<'a> Validator<'a> {
                 // Check if exhaustive.
                 let mut variants_covered = vec![];
                 for row in parameter_precondition_matrix.iter() {
-                    variants_covered.push(row[i].as_ref().unwrap().clone());
+                    variants_covered.push(row[i].as_ref().unwrap().kind.clone());
                 }
 
                 if !variant_names[i]
@@ -572,28 +603,30 @@ impl<'a> Validator<'a> {
                     .all(|v| variants_covered.contains(v))
                 {
                     return Err((
-                        ValidatorError::PreconditionCollapseFailed,
+                        ValidatorError::PreconditionNotExhaustive(parameter_names[i].clone()),
                         Some(functions[0].signature.name.span),
                     ));
                 }
-            } else if *count > 1 {
+            } else if *count > 1 && columns_have_preconditions[i] {
                 return Err((
-                    ValidatorError::PreconditionCollapseFailed,
+                    ValidatorError::PreconditionWildcardDuplicate(parameter_names[i].clone()),
                     Some(functions[0].signature.name.span),
                 ));
             }
         }
 
         let mut catch_all = None;
+        let mut catch_all_index = None;
 
         for (i, function) in functions.iter_mut().enumerate() {
             if catch_all.is_none() {
                 if parameter_precondition_matrix[i].iter().all(|p| p.is_none()) {
                     catch_all = Some(function.body.clone());
+                    catch_all_index = Some(i);
                 }
             } else if parameter_precondition_matrix[i].iter().all(|p| p.is_none()) {
                 return Err((
-                    ValidatorError::PreconditionCollapseFailed,
+                    ValidatorError::PreconditionWildcardInvalid(name.name),
                     Some(function.signature.name.span),
                 ));
             }
@@ -627,7 +660,14 @@ impl<'a> Validator<'a> {
 
         let mut collapsed_body_statements = vec![];
 
+        let function_last_index = functions.len() - 1;
+
         for (i, function) in functions.iter().enumerate() {
+            if let Some(j) = catch_all_index {
+                if i == j {
+                    continue;
+                }
+            }
             let preconditions = &parameter_precondition_matrix[i];
 
             let og_span = Span::from_spans(
@@ -635,10 +675,7 @@ impl<'a> Validator<'a> {
                 function.body.last().unwrap().span,
             );
 
-            let branch = Stmt {
-                span: og_span,
-                kind: StmtKind::Block(function.body.clone()),
-            };
+            let mut branch_body = function.body.clone();
 
             let mut condition = None;
 
@@ -661,10 +698,7 @@ impl<'a> Validator<'a> {
                                     ident: Identifier::new(og_span, param_name.clone()),
                                 }),
                             }),
-                            ty: TypeReference {
-                                span: None,
-                                kind: precond.clone(),
-                            },
+                            ty: precond.clone(),
                         },
                     });
                 } else {
@@ -684,16 +718,49 @@ impl<'a> Validator<'a> {
                                             ident: Identifier::new(og_span, param_name.clone()),
                                         }),
                                     }),
-                                    ty: TypeReference {
-                                        span: None,
-                                        kind: precond.clone(),
-                                    },
+                                    ty: precond.clone(),
                                 },
                             }),
                         },
                     });
                 }
+
+                branch_body.insert(
+                    0,
+                    Stmt {
+                        span: precond.span.unwrap(),
+                        kind: StmtKind::Variable {
+                            name: Identifier::new(og_span, param_name.clone()),
+                            ty: precond.clone(),
+                            value: Expr {
+                                span: precond.span.unwrap(),
+                                kind: ExprKind::TypeBinary {
+                                    op: TypeBinaryOp::As,
+                                    expr: Box::new(Expr {
+                                        span: og_span,
+                                        kind: ExprKind::Variable(NamespacedIdentifier {
+                                            namespace: vec![],
+                                            ident: Identifier::new(og_span, param_name.clone()),
+                                        }),
+                                    }),
+                                    ty: precond.clone(),
+                                },
+                            },
+                        },
+                    },
+                );
             }
+            
+
+            if i == function_last_index {
+                collapsed_body_statements.extend(branch_body);
+                break;
+            }
+
+            let branch = Stmt {
+                span: og_span,
+                kind: StmtKind::Block(branch_body),
+            };
 
             if let Some(condition) = condition {
                 collapsed_body_statements.push(Stmt {
@@ -707,6 +774,10 @@ impl<'a> Validator<'a> {
             } else {
                 collapsed_body_statements.push(branch);
             }
+        }
+
+        if let Some(catch_all) = catch_all {
+            collapsed_body_statements.extend(catch_all);
         }
 
         let collapsed_function = Function {

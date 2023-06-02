@@ -36,7 +36,6 @@ pub enum ValidatorError {
     DuplicateField(String),
     DuplicateFunction(String),
     MissingTraitMethod(String),
-    PreconditionCollapseFailed,
     IncompatibleTypes(String, String),
     InvalidAssignment,
     BadConditionType(String),
@@ -51,6 +50,18 @@ pub enum ValidatorError {
     TypeVariantNotFound(NamespacedIdentifier, String),
     DuplicateWildcard,
     VisibilityMismatch(String, Visibility, Visibility),
+    PreconditionNameMismatch(String, String),
+    PreconditionReturnMismatch(String, String),
+    PreconditionSelfMismatch,
+    PreconditionParameterMismatch(String, String),
+    PreconditionParameterTypeMismatch(String, String),
+    PreconditionOnInvalidType(String),
+    PreconditionParameterCountMismatch(usize, usize),
+    PreconditionDuplicate(String),
+    PreconditionParameterInvalid(String),
+    PreconditionNotExhaustive(String),
+    PreconditionWildcardDuplicate(String),
+    PreconditionWildcardInvalid(String),
 }
 
 impl Display for ValidatorError {
@@ -185,9 +196,6 @@ impl Display for ValidatorError {
             ValidatorError::MissingTraitMethod(name) => {
                 write!(f, "Trait method {} is missing", name)
             }
-            ValidatorError::PreconditionCollapseFailed => {
-                write!(f, "Precondition collapse failed")
-            }
             ValidatorError::IncompatibleTypes(expected, actual) => {
                 write!(f, "Cannot assign type {} to type {}", actual, expected)
             }
@@ -235,8 +243,99 @@ impl Display for ValidatorError {
                 write!(f, "Duplicate wildcard pattern in match")
             }
             ValidatorError::VisibilityMismatch(name, expected, actual) => {
-                write!(f, "Visibility mismatch for {}. Expected {}, found {}", name, expected.verbose(), actual.verbose())
+                write!(
+                    f,
+                    "Visibility mismatch for {}. Expected {}, found {}",
+                    name,
+                    expected.verbose(),
+                    actual.verbose()
+                )
             }
+            ValidatorError::PreconditionNameMismatch(expected, actual) => {
+                write!(
+                    f,
+                    "Preconditioned functions must be named {}. Found {}. This means the interpreter tried to collapse functions with different names! Report bug.",
+                    expected, actual
+                )
+            }
+            ValidatorError::PreconditionReturnMismatch(expected, actual) => {
+                write!(
+                    f,
+                    "Preconditioned functions must return {}. Found {}",
+                    expected, actual
+                )
+            }
+            ValidatorError::PreconditionSelfMismatch => {
+                write!(
+                    f,
+                    "Preconditioned functions must take self as the first parameter"
+                )
+            }
+            ValidatorError::PreconditionParameterMismatch(expected, actual) => {
+                write!(
+                    f,
+                    "Preconditioned functions must take parameter {} in this position. Found {}",
+                    expected, actual
+                )
+            }
+            ValidatorError::PreconditionParameterTypeMismatch(expected, actual) => {
+                write!(
+                    f,
+                    "Preconditioned functions must take parameter of type {} in this positon, found {}",
+                    expected, actual
+                )
+            }
+            ValidatorError::PreconditionOnInvalidType(t) => {
+                write!(
+                    f,
+                    "Parameter type {} cannot be preconditioned. Only union types and varianted named types are supported.",
+                    t
+                )
+            }
+            ValidatorError::PreconditionParameterCountMismatch(expected, actual) => {
+                write!(
+                    f,
+                    "Preconditioned functions must take {} parameters. Found {}",
+                    expected, actual
+                )
+            }
+            ValidatorError::PreconditionDuplicate(name) => {
+                write!(
+                    f,
+                    "Preconditioned functions of name {} have the same precondition set twice",
+                    name
+                )
+            }
+            ValidatorError::PreconditionParameterInvalid(name) => 
+            {
+                write!(
+                    f,
+                    "Preconditioned parameters {} cannot be safely collapsed.",
+                    name
+                )
+            },
+            ValidatorError::PreconditionNotExhaustive(name) => 
+            {
+                write!(
+                    f,
+                    "Preconditions don't cover all cases for type {}.",
+                    name
+                )
+            },
+            ValidatorError::PreconditionWildcardDuplicate(name) => {
+                write!(
+                    f,
+                    "Preconditions of parameter {} have incompatible wildcards",
+                    name
+                )
+            },
+            ValidatorError::PreconditionWildcardInvalid(name) => {
+                write!(
+                    f,
+                    "Preconditions of function {} have wildcards in different functions.",
+                    name
+                )
+            },
         }
     }
 }

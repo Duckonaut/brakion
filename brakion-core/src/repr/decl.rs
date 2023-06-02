@@ -507,7 +507,7 @@ impl TypeReferenceKind {
             (TypeReferenceKind::Named(a), TypeReferenceKind::Named(b)) => a.same(b),
             (TypeReferenceKind::List(a), TypeReferenceKind::List(b)) => a.kind.same(&b.kind),
             (TypeReferenceKind::Union(a), TypeReferenceKind::Union(b)) => {
-                a.iter().all(|a| b.iter().any(|b| a.kind.same(&b.kind)))
+                a.len() == b.len() && a.iter().all(|a| b.iter().any(|b| a.kind.same(&b.kind)))
             }
             (TypeReferenceKind::FloatIndeterminate, TypeReferenceKind::FloatIndeterminate) => true,
             (TypeReferenceKind::Integer(a, a_s), TypeReferenceKind::Integer(b, b_s)) => {

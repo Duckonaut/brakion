@@ -72,6 +72,14 @@ impl Brakion {
 
         validator.check();
 
+        println!("POST CHECK");
+
+        for decl in self.decls.iter_mut() {
+            let printer_node = printer.visit_decl(decl);
+
+            printer_node.dump();
+        }
+
         if self.error_module.unrecoverable() {
             self.error_module.dump(&mut self.units);
             return Err(self.error_module.errors());

@@ -675,3 +675,34 @@ fn union_to_union() {
 
     assert_incompatible(decls, &a, &b);
 }
+
+#[test]
+fn union_same() {
+    let a = TypeReferenceKind::Union(vec![
+        TypeReference {
+            kind: TypeReferenceKind::Bool,
+            span: Some(test_span(1, 4)),
+        },
+        TypeReference {
+            kind: TypeReferenceKind::Integer(crate::repr::IntSize::I32, true),
+            span: Some(test_span(1, 4)),
+        },
+    ]);
+
+    let b = TypeReferenceKind::Union(vec![
+        TypeReference {
+            kind: TypeReferenceKind::Bool,
+            span: Some(test_span(1, 4)),
+        },
+        TypeReference {
+            kind: TypeReferenceKind::Integer(crate::repr::IntSize::I32, true),
+            span: Some(test_span(1, 4)),
+        },
+        TypeReference {
+            kind: TypeReferenceKind::Float(crate::repr::FloatSize::F64),
+            span: Some(test_span(1, 4)),
+        },
+    ]);
+
+    assert!(!a.same(&b));
+}
