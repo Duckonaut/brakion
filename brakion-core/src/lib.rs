@@ -22,6 +22,7 @@ pub mod tokens;
 pub mod type_representation;
 pub mod unit;
 pub mod validator;
+pub mod interpreter;
 
 #[cfg(test)]
 mod tests;

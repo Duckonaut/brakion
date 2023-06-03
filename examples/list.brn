@@ -1,0 +1,21 @@
+fn range(start: i32, end: i32) -> [i32] {
+    var l: [i32] = [];
+    var i = start;
+    while i < end {
+        l.push(i);
+        i = i + 1;
+    }
+    return l;
+}
+
+fn f() {
+    var l: [i32] = [1, 2, 3];
+
+    for i in l {
+        var x = i;
+    }
+
+    for i in range(0, l.len()) {
+        var x = l[i as u32];
+    }
+}

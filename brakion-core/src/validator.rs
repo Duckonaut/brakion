@@ -4,7 +4,7 @@ use crate::{
     errors::{validator::ValidatorError, ErrorModule},
     repr::{
         list_method_signatures, look_up_decl, look_up_module_mut, string_method_signatures,
-        BinaryOp, BrakionTreeVisitor, Decl, Expr, ExprKind, FieldConstructor, Function,
+        BinaryOp, BrakionTreeVisitorMut, Decl, Expr, ExprKind, FieldConstructor, Function,
         FunctionSignature, Identifier, IntSize, Literal, MatchPattern, NamespaceReference,
         NamespacedIdentifier, Parameter, ParameterSpec, Stmt, StmtKind, TraitBody, TypeBinaryOp,
         TypeBody, TypeReference, TypeReferenceKind, TypeVariant, UnaryOp, Visibility,
@@ -336,7 +336,7 @@ impl<'a> Validator<'a> {
             if !function.signature.name.same(&name) {
                 return Err((
                     ValidatorError::PreconditionNameMismatch(
-                        name.name.clone(),
+                        name.name,
                         function.signature.name.name.clone(),
                     ),
                     Some(function.signature.name.span),
@@ -632,6 +632,23 @@ impl<'a> Validator<'a> {
             }
         }
 
+        // check if every variant combination is covered by checking all
+        // possible combinations of variants and checking that against the precondition matrix.
+        let variant_combinations = Self::generate_variant_combinations(&variant_names);
+
+        for variant_combination in variant_combinations {
+            if !parameter_precondition_matrix.iter().any(|row| {
+                row.iter()
+                    .zip(variant_combination.iter())
+                    .all(|(p, v)| p.is_none() || p.as_ref().unwrap().kind.same(v))
+            }) {
+                return Err((
+                    ValidatorError::PreconditionNotExhaustive(name.name),
+                    Some(functions[0].signature.name.span),
+                ));
+            }
+        }
+
         // At this point, we checked everything we could, we can now collapse the functions.
 
         let precond_stripped_params = functions
@@ -750,7 +767,6 @@ impl<'a> Validator<'a> {
                     },
                 );
             }
-            
 
             if i == function_last_index {
                 collapsed_body_statements.extend(branch_body);
@@ -786,6 +802,39 @@ impl<'a> Validator<'a> {
         };
 
         Ok(collapsed_function)
+    }
+
+    fn generate_variant_combinations(
+        variant_columns: &[Vec<TypeReferenceKind>],
+    ) -> Vec<Vec<&TypeReferenceKind>> {
+        if variant_columns.len() == 1 {
+            return variant_columns
+                .first()
+                .unwrap()
+                .iter()
+                .map(|v| vec![v])
+                .collect();
+        }
+
+        let mut combinations: Vec<Vec<&TypeReferenceKind>> = vec![];
+
+        for variant_column in variant_columns {
+            let combinations_for_variant_column =
+                Self::generate_variant_combinations(&variant_columns[1..variant_columns.len()]);
+
+            for variant in variant_column {
+                let mut combinations_for_variant_column_cell =
+                    combinations_for_variant_column.clone();
+
+                combinations_for_variant_column_cell
+                    .iter_mut()
+                    .for_each(|c| c.insert(0, variant));
+
+                combinations.append(&mut combinations_for_variant_column_cell);
+            }
+        }
+
+        combinations
     }
 
     fn validate_function(
@@ -1368,7 +1417,7 @@ impl<'a> Validator<'a> {
     }
 }
 
-impl<'a> BrakionTreeVisitor for Validator<'a> {
+impl<'a> BrakionTreeVisitorMut for Validator<'a> {
     type ExprResult = Result<TypeReferenceKind, (ValidatorError, Option<Span>)>;
     type StmtResult = Result<(), (ValidatorError, Option<Span>)>;
     type DeclResult = ();
@@ -2200,6 +2249,13 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                     return Ok(function.signature.return_type.clone().kind);
                 }
 
+                if name.namespace.is_empty() {
+                    return Err((
+                        ValidatorError::UnknownFunction(name.clone()),
+                        Some(expr.span),
+                    ));
+                }
+
                 let type_body = self.look_up_type_body(&mut name.up());
 
                 if let Some(type_body) = type_body {
@@ -2395,7 +2451,7 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                     TypeReferenceKind::List(ref t) => {
                         let index_type = Self::visit_expr(self, index)?;
 
-                        if !index_type.is_integer() {
+                        if !matches!(index_type, TypeReferenceKind::Integer(_, false)) {
                             return Err((
                                 ValidatorError::IndexNotInt(
                                     expr_type.to_string(),

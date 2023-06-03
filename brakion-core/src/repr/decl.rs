@@ -410,6 +410,52 @@ pub fn list_method_signatures(type_ref: &TypeReference) -> Vec<FunctionSignature
             self_precondition: None,
             return_type: type_ref.clone(),
         },
+        FunctionSignature {
+            name: Identifier {
+                name: "set".to_string(),
+                span: Span::default(),
+            },
+            takes_self: true,
+            parameters: vec![
+                Parameter {
+                    name: Identifier {
+                        name: "index".to_string(),
+                        span: Span::default(),
+                    },
+                    ty: TypeReference {
+                        kind: TypeReferenceKind::Integer(IntSize::I64, false),
+                        span: None,
+                    },
+                    kind: ParameterSpec::Basic,
+                },
+                Parameter {
+                    name: Identifier {
+                        name: "value".to_string(),
+                        span: Span::default(),
+                    },
+                    ty: type_ref.clone(),
+                    kind: ParameterSpec::Basic,
+                },
+            ],
+            self_precondition: None,
+            return_type: TypeReference {
+                kind: TypeReferenceKind::Void,
+                span: None,
+            },
+        },
+        FunctionSignature {
+            name: Identifier {
+                name: "len".to_string(),
+                span: Span::default(),
+            },
+            takes_self: true,
+            parameters: vec![],
+            self_precondition: None,
+            return_type: TypeReference {
+                kind: TypeReferenceKind::Integer(IntSize::I64, false),
+                span: None,
+            },
+        },
     ]
 }
 
