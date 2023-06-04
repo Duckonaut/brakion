@@ -617,6 +617,13 @@ type Parser {
                 operator: operator as UnaryOperator,
                 operand: operand as Expression,
             };
+        } else if self.current_token().value is BinaryOperator::Subtract {
+            self.advance();
+            var operand = self.parse_unary();
+            return Expression::Unary -> {
+                operator: UnaryOperator::Negate -> {},
+                operand: operand as Expression,
+            };
         }
         return self.parse_primary();
     }
