@@ -293,9 +293,9 @@ type Lexer {
     }
 
     fn lex_token(self) {
-        var c: char = self.source[self.current];
+        self.skip_whitespace();
 
-        # self.skip_whitespace();
+        var c: char = self.source[self.current];
 
         match c {
             on '(' {
@@ -328,7 +328,8 @@ type Lexer {
                     self.advance();
                     self.tokens.push(Token -> { value: BinaryOperator::Equal -> {} });
                 } else {
-                    # TODO: Error
+                    std::io::println("Unexpected token '='");
+                    std::exit(1);
                 }
             }
             on '!' {
@@ -387,14 +388,15 @@ type Lexer {
                         if operator {
                             self.tokens.push(Token -> { value: operator as UnaryOperator });
                         } else {
-                            # TODO: Error
+                            std::io::println("Unexpected token '" + substr + "'");
+                            std::exit(1);
                         }
                     }
                 }
             }
             else {
-                self.advance();
-                # TODO: Error
+                std::io::println("Unexpected character '" + std::char::to_str(c) + "'");
+                std::exit(1);
             }
         }
     }
