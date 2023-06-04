@@ -44,6 +44,10 @@ fn main() {
 
             brakion.add_unit("stdin".to_string(), std::io::Cursor::new(buffer));
         } else {
+            if !filepath.exists() {
+                eprintln!("File {} does not exist", filepath.to_str().unwrap());
+                std::process::exit(1);
+            }
             let file = std::fs::File::open(filepath.clone()).expect("Could not open file");
 
             brakion.add_unit(filepath.to_str().unwrap().to_string(), file);
