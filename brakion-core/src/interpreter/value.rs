@@ -1,8 +1,8 @@
 use std::{cell::RefCell, collections::HashMap, fmt::Display, rc::Rc};
 
 use crate::repr::{
-    look_up_decl, type_implements_trait, Decl, FloatSize, IntSize, NamespaceReference,
-    TypeReferenceKind,
+    look_up_decl, type_implements_trait, Decl, FloatSize, Function, IntSize, NamespaceReference,
+    TypeBody, TypeReference, TypeReferenceKind, TypeVariant,
 };
 
 macro_rules! int_cast {
@@ -24,7 +24,7 @@ macro_rules! int_cast {
 }
 
 #[derive(Debug, Clone)]
-pub enum Value {
+pub enum Value<'a> {
     I8(i8),
     I16(i16),
     I32(i32),
@@ -39,29 +39,96 @@ pub enum Value {
     String(String),
     Char(char),
     Void,
-    Instance(Instance),
-    List(ListInstance),
+    Instance(Instance<'a>),
+    List(ListInstance<'a>),
 }
 
-impl PartialEq for Value {
+impl<'a> PartialEq for Value<'a> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            // signed
+            (Self::I8(l0), Self::I64(r0)) => *l0 as i64 == *r0,
+            (Self::I8(l0), Self::I32(r0)) => *l0 as i32 == *r0,
+            (Self::I8(l0), Self::I16(r0)) => *l0 as i16 == *r0,
             (Self::I8(l0), Self::I8(r0)) => l0 == r0,
+            (Self::I16(l0), Self::I64(r0)) => *l0 as i64 == *r0,
+            (Self::I16(l0), Self::I32(r0)) => *l0 as i32 == *r0,
             (Self::I16(l0), Self::I16(r0)) => l0 == r0,
+            (Self::I16(l0), Self::I8(r0)) => *l0 == *r0 as i16,
+            (Self::I32(l0), Self::I64(r0)) => *l0 as i64 == *r0,
             (Self::I32(l0), Self::I32(r0)) => l0 == r0,
+            (Self::I32(l0), Self::I16(r0)) => *l0 == *r0 as i32,
+            (Self::I32(l0), Self::I8(r0)) => *l0 == *r0 as i32,
             (Self::I64(l0), Self::I64(r0)) => l0 == r0,
+            (Self::I64(l0), Self::I32(r0)) => *l0 == *r0 as i64,
+            (Self::I64(l0), Self::I16(r0)) => *l0 == *r0 as i64,
+            (Self::I64(l0), Self::I8(r0)) => *l0 == *r0 as i64,
+            // unsigned
             (Self::U8(l0), Self::U8(r0)) => l0 == r0,
+            (Self::U8(l0), Self::U16(r0)) => *l0 as u16 == *r0,
+            (Self::U8(l0), Self::U32(r0)) => *l0 as u32 == *r0,
+            (Self::U8(l0), Self::U64(r0)) => *l0 as u64 == *r0,
+            (Self::U16(l0), Self::U8(r0)) => *l0 == *r0 as u16,
             (Self::U16(l0), Self::U16(r0)) => l0 == r0,
+            (Self::U16(l0), Self::U32(r0)) => *l0 as u32 == *r0,
+            (Self::U16(l0), Self::U64(r0)) => *l0 as u64 == *r0,
+            (Self::U32(l0), Self::U8(r0)) => *l0 == *r0 as u32,
+            (Self::U32(l0), Self::U16(r0)) => *l0 == *r0 as u32,
             (Self::U32(l0), Self::U32(r0)) => l0 == r0,
+            (Self::U32(l0), Self::U64(r0)) => *l0 as u64 == *r0,
+            (Self::U64(l0), Self::U8(r0)) => *l0 == *r0 as u64,
+            (Self::U64(l0), Self::U16(r0)) => *l0 == *r0 as u64,
+            (Self::U64(l0), Self::U32(r0)) => *l0 == *r0 as u64,
             (Self::U64(l0), Self::U64(r0)) => l0 == r0,
+            // mixed
+            (Self::I8(l0), Self::U8(r0)) => *l0 as u8 == *r0,
+            (Self::I8(l0), Self::U16(r0)) => *l0 as u16 == *r0,
+            (Self::I8(l0), Self::U32(r0)) => *l0 as u32 == *r0,
+            (Self::I8(l0), Self::U64(r0)) => *l0 as u64 == *r0,
+            (Self::I16(l0), Self::U8(r0)) => *l0 as u8 == *r0,
+            (Self::I16(l0), Self::U16(r0)) => *l0 as u16 == *r0,
+            (Self::I16(l0), Self::U32(r0)) => *l0 as u32 == *r0,
+            (Self::I16(l0), Self::U64(r0)) => *l0 as u64 == *r0,
+            (Self::I32(l0), Self::U8(r0)) => *l0 as u8 == *r0,
+            (Self::I32(l0), Self::U16(r0)) => *l0 as u16 == *r0,
+            (Self::I32(l0), Self::U32(r0)) => *l0 as u32 == *r0,
+            (Self::I32(l0), Self::U64(r0)) => *l0 as u64 == *r0,
+            (Self::I64(l0), Self::U8(r0)) => *l0 as u8 == *r0,
+            (Self::I64(l0), Self::U16(r0)) => *l0 as u16 == *r0,
+            (Self::I64(l0), Self::U32(r0)) => *l0 as u32 == *r0,
+            (Self::I64(l0), Self::U64(r0)) => *l0 as u64 == *r0,
+            (Self::U8(l0), Self::I8(r0)) => *l0 == *r0 as u8,
+            (Self::U8(l0), Self::I16(r0)) => *l0 == *r0 as u8,
+            (Self::U8(l0), Self::I32(r0)) => *l0 == *r0 as u8,
+            (Self::U8(l0), Self::I64(r0)) => *l0 == *r0 as u8,
+            (Self::U16(l0), Self::I8(r0)) => *l0 == *r0 as u16,
+            (Self::U16(l0), Self::I16(r0)) => *l0 == *r0 as u16,
+            (Self::U16(l0), Self::I32(r0)) => *l0 == *r0 as u16,
+            (Self::U16(l0), Self::I64(r0)) => *l0 == *r0 as u16,
+            (Self::U32(l0), Self::I8(r0)) => *l0 == *r0 as u32,
+            (Self::U32(l0), Self::I16(r0)) => *l0 == *r0 as u32,
+            (Self::U32(l0), Self::I32(r0)) => *l0 == *r0 as u32,
+            (Self::U32(l0), Self::I64(r0)) => *l0 == *r0 as u32,
+            (Self::U64(l0), Self::I8(r0)) => *l0 == *r0 as u64,
+            (Self::U64(l0), Self::I16(r0)) => *l0 == *r0 as u64,
+            (Self::U64(l0), Self::I32(r0)) => *l0 == *r0 as u64,
+            (Self::U64(l0), Self::I64(r0)) => *l0 == *r0 as u64,
+            // float
             (Self::F32(l0), Self::F32(r0)) => l0 == r0,
             (Self::F64(l0), Self::F64(r0)) => l0 == r0,
             (Self::Bool(l0), Self::Bool(r0)) => l0 == r0,
             (Self::String(l0), Self::String(r0)) => l0 == r0,
             (Self::Char(l0), Self::Char(r0)) => l0 == r0,
             (Self::Instance(l0), Self::Instance(r0)) => {
-                Rc::ptr_eq(&l0.0, &r0.0)
-                    || l0.0.borrow().type_reference == r0.0.borrow().type_reference
+                Rc::ptr_eq(&l0.0, &r0.0) || {
+                    l0.get_type_body() == r0.get_type_body()
+                        && l0.get_type_variant() == r0.get_type_variant()
+                        && l0
+                            .get_type_variant()
+                            .fields
+                            .iter()
+                            .all(|f| l0.get_field(&f.name.name) == r0.get_field(&f.name.name))
+                }
             }
             (Self::List(l0), Self::List(r0)) => Rc::ptr_eq(&l0.0, &r0.0),
             _ => core::mem::discriminant(self) == core::mem::discriminant(other),
@@ -70,22 +137,27 @@ impl PartialEq for Value {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Instance(Rc<RefCell<InstanceInternal>>);
+pub struct Instance<'a>(Rc<RefCell<InstanceInternal<'a>>>);
 
-impl Instance {
-    pub(crate) fn new(type_reference: TypeReferenceKind, type_variant: String) -> Self {
+impl<'a> Instance<'a> {
+    pub(crate) fn new(
+        type_reference: TypeReferenceKind,
+        type_body: &'a TypeBody,
+        type_variant: &'a TypeVariant,
+    ) -> Self {
         Self(Rc::new(RefCell::new(InstanceInternal {
             type_reference,
+            type_body,
             type_variant,
             fields: HashMap::new(),
         })))
     }
 
-    pub(crate) fn get_field(&self, name: &str) -> Option<Value> {
+    pub(crate) fn get_field(&self, name: &str) -> Option<Value<'a>> {
         self.0.borrow().fields.get(name).cloned()
     }
 
-    pub(crate) fn set_field(&self, name: &str, value: Value) {
+    pub(crate) fn set_field(&self, name: &str, value: Value<'a>) {
         self.0.borrow_mut().fields.insert(name.to_owned(), value);
     }
 
@@ -93,23 +165,27 @@ impl Instance {
         self.0.borrow().type_reference.clone()
     }
 
-    pub(crate) fn get_type_variant(&self) -> String {
-        self.0.borrow().type_variant.clone()
+    pub(crate) fn get_type_body(&self) -> &'a TypeBody {
+        self.0.borrow().type_body
     }
 
-    pub(crate) fn get_fields(&self) -> HashMap<String, Value> {
-        self.0.borrow().fields.clone()
+    pub(crate) fn get_type_variant(&self) -> &'a TypeVariant {
+        self.0.borrow().type_variant
     }
 
-    pub(crate) fn clone(&self) -> Self {
-        Self(self.0.clone())
+    pub(crate) fn lookup_method(&self, name: &str) -> Option<&'a Function> {
+        self.get_type_body()
+            .methods
+            .iter()
+            .find(|m| m.1.signature.name.name == name)
+            .map(|m| &m.1)
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ListInstance(Rc<RefCell<ListInstanceInternal>>);
+pub struct ListInstance<'a>(Rc<RefCell<ListInstanceInternal<'a>>>);
 
-impl ListInstance {
+impl<'a> ListInstance<'a> {
     pub(crate) fn new(ty: TypeReferenceKind) -> Self {
         Self(Rc::new(RefCell::new(ListInstanceInternal {
             type_reference: ty,
@@ -117,24 +193,34 @@ impl ListInstance {
         })))
     }
 
-    pub(crate) fn get_elements(&self) -> Vec<Value> {
+    pub(crate) fn get_elements(&self) -> Vec<Value<'a>> {
         self.0.borrow().elements.clone()
     }
 
-    pub(crate) fn push(&self, value: Value) {
+    pub(crate) fn push(&self, value: Value<'a>) {
+        if let TypeReferenceKind::Infer = self.get_type_reference() {
+            self.0.borrow_mut().type_reference = value.get_type_reference();
+        }
         self.0.borrow_mut().elements.push(value);
     }
 
-    pub(crate) fn pop(&self) -> Option<Value> {
+    pub(crate) fn pop(&self) -> Option<Value<'a>> {
         self.0.borrow_mut().elements.pop()
     }
 
-    pub(crate) fn get(&self, index: usize) -> Option<Value> {
+    pub(crate) fn get(&self, index: usize) -> Option<Value<'a>> {
         self.0.borrow().elements.get(index).cloned()
     }
 
-    pub(crate) fn clone(&self) -> Self {
-        Self(self.0.clone())
+    pub(crate) fn set(&self, index: usize, value: Value<'a>) {
+        if let TypeReferenceKind::Infer = self.get_type_reference() {
+            self.0.borrow_mut().type_reference = value.get_type_reference();
+        }
+        self.0.borrow_mut().elements[index] = value;
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.0.borrow().elements.len()
     }
 
     pub(crate) fn get_type_reference(&self) -> TypeReferenceKind {
@@ -143,19 +229,20 @@ impl ListInstance {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ListInstanceInternal {
+pub struct ListInstanceInternal<'a> {
     pub type_reference: TypeReferenceKind,
-    pub elements: Vec<Value>,
+    pub elements: Vec<Value<'a>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct InstanceInternal {
+pub struct InstanceInternal<'a> {
     pub type_reference: TypeReferenceKind,
-    pub type_variant: String,
-    pub fields: HashMap<String, Value>,
+    pub type_body: &'a TypeBody,
+    pub type_variant: &'a TypeVariant,
+    pub fields: HashMap<String, Value<'a>>,
 }
 
-impl Value {
+impl<'a> Value<'a> {
     pub fn is_numeric(&self) -> bool {
         matches!(
             self,
@@ -189,9 +276,31 @@ impl Value {
     pub fn is_int(&self) -> bool {
         matches!(
             self,
-            Self::I8(_) | Self::I16(_) | Self::I32(_) | Self::I64(_)
-                | Self::U8(_) | Self::U16(_) | Self::U32(_) | Self::U64(_)
+            Self::I8(_)
+                | Self::I16(_)
+                | Self::I32(_)
+                | Self::I64(_)
+                | Self::U8(_)
+                | Self::U16(_)
+                | Self::U32(_)
+                | Self::U64(_)
         )
+    }
+
+    pub fn is_zero(&self) -> bool {
+        match self {
+            Self::I8(0) => true,
+            Self::I16(0) => true,
+            Self::I32(0) => true,
+            Self::I64(0) => true,
+            Self::U8(0) => true,
+            Self::U16(0) => true,
+            Self::U32(0) => true,
+            Self::U64(0) => true,
+            Self::F32(f) => *f == 0.0,
+            Self::F64(f) => *f == 0.0,
+            _ => false,
+        }
     }
 
     pub fn is_float(&self) -> bool {
@@ -286,7 +395,9 @@ impl Value {
 
                     match decl {
                         NamespaceReference::Decl(d) => match d {
-                            Decl::Type { .. } => instance_type_name.same(name),
+                            Decl::Type { .. } => {
+                                instance_type_name.same(name) || instance_type_name.up().same(name)
+                            }
                             Decl::Trait { .. } => {
                                 type_implements_trait(root, &instance_type_name, name).unwrap()
                                 // Validator should have checked this, so this should never fail
@@ -305,7 +416,7 @@ impl Value {
                                     .find(|v| *v == variant)
                                     .expect("Variant not found"); // Validator should have checked this, so this should never fail
 
-                                i.get_type_variant() == variant.name.name
+                                i.get_type_variant() == variant
                             } else {
                                 false
                             }
@@ -320,7 +431,41 @@ impl Value {
         }
     }
 
+    pub fn get_type_reference(&self) -> TypeReferenceKind {
+        match self {
+            Self::I8(_) => TypeReferenceKind::Integer(IntSize::I8, true),
+            Self::I16(_) => TypeReferenceKind::Integer(IntSize::I16, true),
+            Self::I32(_) => TypeReferenceKind::Integer(IntSize::I32, true),
+            Self::I64(_) => TypeReferenceKind::Integer(IntSize::I64, true),
+            Self::U8(_) => TypeReferenceKind::Integer(IntSize::I8, false),
+            Self::U16(_) => TypeReferenceKind::Integer(IntSize::I16, false),
+            Self::U32(_) => TypeReferenceKind::Integer(IntSize::I32, false),
+            Self::U64(_) => TypeReferenceKind::Integer(IntSize::I64, false),
+            Self::F32(_) => TypeReferenceKind::Float(FloatSize::F32),
+            Self::F64(_) => TypeReferenceKind::Float(FloatSize::F64),
+            Self::Bool(_) => TypeReferenceKind::Bool,
+            Self::String(_) => TypeReferenceKind::String,
+            Self::Char(_) => TypeReferenceKind::Char,
+            Self::Void => TypeReferenceKind::Void,
+            Self::Instance(i) => i.get_type_reference(),
+            Self::List(l) => TypeReferenceKind::List(Box::new(TypeReference {
+                span: None,
+                kind: l.get_type_reference(),
+            })),
+        }
+    }
+
     pub fn cast(&self, ty: &TypeReferenceKind, root: &[Decl]) -> Option<Self> {
+        if let TypeReferenceKind::Union(tys) = ty {
+            for ty in tys {
+                if let Some(v) = self.cast(&ty.kind, root) {
+                    return Some(v);
+                }
+            }
+
+            return None;
+        }
+
         match self {
             Self::I8(i) => int_cast!(i, ty),
             Self::I16(i) => int_cast!(i, ty),
@@ -367,9 +512,33 @@ impl Value {
                 _ => None,
             },
             Self::Instance(instance) => {
-                todo!()
+                if ty.same(&instance.get_type_reference())
+                    || ty
+                        .is_compatible(&instance.get_type_reference(), root)
+                        .unwrap()
+                {
+                    Some(Self::Instance(instance.clone()))
+                } else {
+                    None
+                }
             }
-            Self::List(_) => todo!(),
+            Self::List(l) => {
+                if let TypeReferenceKind::List(ty) = ty {
+                    let new_list = ListInstance::new(ty.kind.clone());
+
+                    for v in l.get_elements().iter() {
+                        if let Some(v) = v.cast(&ty.kind, root) {
+                            new_list.push(v);
+                        } else {
+                            return None;
+                        }
+                    }
+
+                    Some(Self::List(new_list))
+                } else {
+                    None
+                }
+            }
         }
     }
 
@@ -390,12 +559,12 @@ impl Value {
             Self::Char(_) => "char".to_string(),
             Self::Void => "void".to_string(),
             Self::Instance(i) => i.get_type_reference().to_string(),
-            Self::List(l) => format!("[{}]", l.get_type_reference().to_string()),
+            Self::List(l) => format!("[{}]", l.get_type_reference()),
         }
     }
 }
 
-impl std::ops::Neg for Value {
+impl<'a> std::ops::Neg for Value<'a> {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
@@ -415,7 +584,7 @@ impl std::ops::Neg for Value {
     }
 }
 
-impl std::ops::Not for Value {
+impl<'a> std::ops::Not for Value<'a> {
     type Output = Self;
 
     fn not(self) -> Self::Output {
@@ -426,7 +595,7 @@ impl std::ops::Not for Value {
     }
 }
 
-impl Display for Value {
+impl<'a> Display for Value<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Value::I8(i) => write!(f, "{}", i),
@@ -449,31 +618,31 @@ impl Display for Value {
     }
 }
 
-impl std::ops::Add for Value {
+impl<'a> std::ops::Add for Value<'a> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (Self::I8(l), Self::I8(r)) => Self::I8(l + r),
-            (Self::I16(l), Self::I16(r)) => Self::I16(l + r),
-            (Self::I16(l), Self::I8(r)) => Self::I16(l + r as i16),
-            (Self::I32(l), Self::I32(r)) => Self::I32(l + r),
-            (Self::I32(l), Self::I16(r)) => Self::I32(l + r as i32),
-            (Self::I32(l), Self::I8(r)) => Self::I32(l + r as i32),
-            (Self::I64(l), Self::I64(r)) => Self::I64(l + r),
-            (Self::I64(l), Self::I32(r)) => Self::I64(l + r as i64),
-            (Self::I64(l), Self::I16(r)) => Self::I64(l + r as i64),
-            (Self::I64(l), Self::I8(r)) => Self::I64(l + r as i64),
-            (Self::U8(l), Self::U8(r)) => Self::U8(l + r),
-            (Self::U16(l), Self::U16(r)) => Self::U16(l + r),
-            (Self::U16(l), Self::U8(r)) => Self::U16(l + r as u16),
-            (Self::U32(l), Self::U32(r)) => Self::U32(l + r),
-            (Self::U32(l), Self::U16(r)) => Self::U32(l + r as u32),
-            (Self::U32(l), Self::U8(r)) => Self::U32(l + r as u32),
-            (Self::U64(l), Self::U64(r)) => Self::U64(l + r),
-            (Self::U64(l), Self::U32(r)) => Self::U64(l + r as u64),
-            (Self::U64(l), Self::U16(r)) => Self::U64(l + r as u64),
-            (Self::U64(l), Self::U8(r)) => Self::U64(l + r as u64),
+            (Self::I8(l), Self::I8(r)) => Self::I8(l.overflowing_add(r).0),
+            (Self::I16(l), Self::I16(r)) => Self::I16(l.overflowing_add(r).0),
+            (Self::I16(l), Self::I8(r)) => Self::I16(l.overflowing_add(r as i16).0),
+            (Self::I32(l), Self::I32(r)) => Self::I32(l.overflowing_add(r).0),
+            (Self::I32(l), Self::I16(r)) => Self::I32(l.overflowing_add(r as i32).0),
+            (Self::I32(l), Self::I8(r)) => Self::I32(l.overflowing_add(r as i32).0),
+            (Self::I64(l), Self::I64(r)) => Self::I64(l.overflowing_add(r).0),
+            (Self::I64(l), Self::I32(r)) => Self::I64(l.overflowing_add(r as i64).0),
+            (Self::I64(l), Self::I16(r)) => Self::I64(l.overflowing_add(r as i64).0),
+            (Self::I64(l), Self::I8(r)) => Self::I64(l.overflowing_add(r as i64).0),
+            (Self::U8(l), Self::U8(r)) => Self::U8(l.overflowing_add(r).0),
+            (Self::U16(l), Self::U16(r)) => Self::U16(l.overflowing_add(r).0),
+            (Self::U16(l), Self::U8(r)) => Self::U16(l.overflowing_add(r as u16).0),
+            (Self::U32(l), Self::U32(r)) => Self::U32(l.overflowing_add(r).0),
+            (Self::U32(l), Self::U16(r)) => Self::U32(l.overflowing_add(r as u32).0),
+            (Self::U32(l), Self::U8(r)) => Self::U32(l.overflowing_add(r as u32).0),
+            (Self::U64(l), Self::U64(r)) => Self::U64(l.overflowing_add(r).0),
+            (Self::U64(l), Self::U32(r)) => Self::U64(l.overflowing_add(r as u64).0),
+            (Self::U64(l), Self::U16(r)) => Self::U64(l.overflowing_add(r as u64).0),
+            (Self::U64(l), Self::U8(r)) => Self::U64(l.overflowing_add(r as u64).0),
             (Self::F32(l), Self::F32(r)) => Self::F32(l + r),
             (Self::F32(l), Self::F64(r)) => Self::F32(l + r as f32),
             (Self::F64(l), Self::F64(r)) => Self::F64(l + r),
@@ -485,7 +654,7 @@ impl std::ops::Add for Value {
     }
 }
 
-impl std::ops::Sub for Value {
+impl<'a> std::ops::Sub for Value<'a> {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -514,12 +683,12 @@ impl std::ops::Sub for Value {
             (Self::F32(l), Self::F64(r)) => Self::F32(l - r as f32),
             (Self::F64(l), Self::F64(r)) => Self::F64(l - r),
             (Self::F64(l), Self::F32(r)) => Self::F64(l - r as f64),
-            _ => panic!("Cannot subtract values"),
+            (l, r) => panic!("Cannot subtract values {} and {}", dbg!(l), dbg!(r)),
         }
     }
 }
 
-impl std::ops::Mul for Value {
+impl<'a> std::ops::Mul for Value<'a> {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
@@ -553,7 +722,7 @@ impl std::ops::Mul for Value {
     }
 }
 
-impl std::ops::Div for Value {
+impl<'a> std::ops::Div for Value<'a> {
     type Output = Self;
 
     fn div(self, rhs: Self) -> Self::Output {
@@ -587,7 +756,7 @@ impl std::ops::Div for Value {
     }
 }
 
-impl std::cmp::PartialOrd for Value {
+impl<'a> std::cmp::PartialOrd for Value<'a> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         match (self, other) {
             (Self::I8(l), Self::I8(r)) => l.partial_cmp(r),
@@ -615,9 +784,15 @@ impl std::cmp::PartialOrd for Value {
             (Self::F64(l), Self::F64(r)) => l.partial_cmp(r),
             (Self::F64(l), Self::F32(r)) => l.partial_cmp(&(*r as f64)),
             // compare signed and unsigned too
+            (Self::I8(l), Self::U64(r)) => l.partial_cmp(&(*r as i8)),
+            (Self::I8(l), Self::U32(r)) => l.partial_cmp(&(*r as i8)),
+            (Self::I8(l), Self::U16(r)) => l.partial_cmp(&(*r as i8)),
             (Self::I8(l), Self::U8(r)) => l.partial_cmp(&(*r as i8)),
+            (Self::I16(l), Self::U64(r)) => l.partial_cmp(&(*r as i16)),
+            (Self::I16(l), Self::U32(r)) => l.partial_cmp(&(*r as i16)),
             (Self::I16(l), Self::U16(r)) => l.partial_cmp(&(*r as i16)),
             (Self::I16(l), Self::U8(r)) => l.partial_cmp(&(*r as i16)),
+            (Self::I32(l), Self::U64(r)) => l.partial_cmp(&(*r as i32)),
             (Self::I32(l), Self::U32(r)) => l.partial_cmp(&(*r as i32)),
             (Self::I32(l), Self::U16(r)) => l.partial_cmp(&(*r as i32)),
             (Self::I32(l), Self::U8(r)) => l.partial_cmp(&(*r as i32)),
@@ -625,9 +800,14 @@ impl std::cmp::PartialOrd for Value {
             (Self::I64(l), Self::U32(r)) => l.partial_cmp(&(*r as i64)),
             (Self::I64(l), Self::U16(r)) => l.partial_cmp(&(*r as i64)),
             (Self::I64(l), Self::U8(r)) => l.partial_cmp(&(*r as i64)),
+            (Self::U8(l), Self::I64(r)) => l.partial_cmp(&(*r as u8)),
+            (Self::U8(l), Self::I32(r)) => l.partial_cmp(&(*r as u8)),
+            (Self::U8(l), Self::I16(r)) => l.partial_cmp(&(*r as u8)),
             (Self::U8(l), Self::I8(r)) => l.partial_cmp(&(*r as u8)),
+            (Self::U16(l), Self::I32(r)) => l.partial_cmp(&(*r as u16)),
             (Self::U16(l), Self::I16(r)) => l.partial_cmp(&(*r as u16)),
             (Self::U16(l), Self::I8(r)) => l.partial_cmp(&(*r as u16)),
+            (Self::U32(l), Self::I64(r)) => l.partial_cmp(&(*r as u32)),
             (Self::U32(l), Self::I32(r)) => l.partial_cmp(&(*r as u32)),
             (Self::U32(l), Self::I16(r)) => l.partial_cmp(&(*r as u32)),
             (Self::U32(l), Self::I8(r)) => l.partial_cmp(&(*r as u32)),

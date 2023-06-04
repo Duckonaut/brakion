@@ -17,3 +17,8 @@ fn a() -> bool {
 
     return a == b;
 }
+
+fn main(args: [str]) -> i32 {
+    std::io::println(std::bool::to_str(a()));
+    return 0;
+}

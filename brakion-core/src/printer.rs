@@ -166,6 +166,13 @@ impl BrakionTreeVisitor for Printer {
 
                 f_node
             }
+            Decl::NativeFunction(native_function) => {
+                let mut f_node = PrinterNode::new("fn".to_string());
+                f_node.flag("native");
+                f_node.node(self.print_function_signature(&native_function.signature));
+
+                f_node
+            }
             Decl::Type {
                 visibility,
                 name,
@@ -201,6 +208,7 @@ impl BrakionTreeVisitor for Printer {
                         body_node.field("stmt", self.visit_stmt(stmt));
                     }
                     method_node.node(body_node);
+                    type_node.node(method_node);
                 }
 
                 type_node

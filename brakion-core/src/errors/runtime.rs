@@ -9,6 +9,8 @@ pub enum RuntimeError {
     InvalidBinary(BinaryOp),
     IndexOutOfBounds(usize),
     UndefinedVariable(String),
+    MainFunctionNotFound,
+    DivisionByZero,
 }
 
 impl Display for RuntimeError {
@@ -19,6 +21,8 @@ impl Display for RuntimeError {
             RuntimeError::InvalidBinary(op) => write!(f, "Invalid binary operation: {}", op),
             RuntimeError::IndexOutOfBounds(i) => write!(f, "Index out of bounds: {}", i),
             RuntimeError::UndefinedVariable(name) => write!(f, "Undefined variable: {}", name),
+            RuntimeError::MainFunctionNotFound => write!(f, "Main function not found"),
+            RuntimeError::DivisionByZero => write!(f, "Division by zero"),
         }
     }
 }

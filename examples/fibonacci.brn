@@ -1,0 +1,21 @@
+fn fib(n: u64) -> u64 {
+    var table: [u64] = [0, 1];
+
+    for i in std::iter::range(2, n + 1) {
+        table.push(table[i - 1] + table[i - 2]);
+    }
+
+    return table[n];
+}
+
+fn main(args: [str]) -> i32 {
+    var n: u64 = 10;
+
+    if args.len() >= 1 {
+        n = std::u64::parse(args[0]);
+    }
+
+    std::io::println("fib(" + std::u64::to_str(n) + ") = " + std::u64::to_str(fib(n)));
+
+    return 0;
+}

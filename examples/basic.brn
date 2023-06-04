@@ -1,12 +1,14 @@
-fn main() {
+fn main(args: [str]) -> i32 {
     var x: u64 = 0;
 
     while (x < 10) {
-        std::io::println(x.to_str());
+        std::io::println(std::u64::to_str(x));
         x = x + 1;
     }
 
     for i in std::iter::range(0, 10) {
-        std::io::println(i.to_str());
+        std::io::println(std::u64::to_str(i));
     }
+
+    return 0;
 }

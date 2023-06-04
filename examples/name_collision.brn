@@ -1,0 +1,7 @@
+fn f() -> i32 {
+    return 1;
+}
+
+type T;
+
+type T;
