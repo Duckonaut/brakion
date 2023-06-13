@@ -1,7 +1,7 @@
 use crate::{
     errors::validator::ValidatorError,
     repr::{
-        BinaryOp, BrakionTreeVisitor, Decl, Expr, ExprKind, IntSize, Literal, TypeReferenceKind,
+        BinaryOp, BrakionTreeVisitorMut, Decl, Expr, ExprKind, IntSize, Literal, TypeReferenceKind,
         UnaryOp,
     },
     tests::test_span,

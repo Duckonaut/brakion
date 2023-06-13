@@ -9,11 +9,3 @@ fn main(args: [str]) -> i32 {
 
     return 0;
 }
-
-mod std {
-    mod io {
-        fn println(x: str) {
-            # empty
-        }
-    }
-}

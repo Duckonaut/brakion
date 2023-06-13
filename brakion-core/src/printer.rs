@@ -103,16 +103,16 @@ impl Printer {
         Self
     }
 
-    fn print_function_signature(&mut self, f: &mut FunctionSignature) -> PrinterNode {
+    fn print_function_signature(&mut self, f: &FunctionSignature) -> PrinterNode {
         let mut node = PrinterNode::new("signature".to_string());
         node.descriptor("name", &f.name.name);
-        node.field("return", self.visit_type_reference(&mut f.return_type));
+        node.field("return", self.visit_type_reference(&f.return_type));
 
-        for param in f.parameters.iter_mut() {
+        for param in f.parameters.iter() {
             let mut param_node = PrinterNode::new("param".to_string());
             param_node.descriptor("name", &param.name.name);
-            param_node.field("type", self.visit_type_reference(&mut param.ty));
-            if let ParameterSpec::Preconditioned(ty) = &mut param.kind {
+            param_node.field("type", self.visit_type_reference(&param.ty));
+            if let ParameterSpec::Preconditioned(ty) = &param.kind {
                 param_node.field("precondition", self.visit_type_reference(ty));
             }
 
@@ -129,7 +129,7 @@ impl BrakionTreeVisitor for Printer {
     type DeclResult = PrinterNode;
     type TypeReferenceResult = PrinterNode;
 
-    fn visit_decl(&mut self, decl: &mut Decl) -> Self::DeclResult {
+    fn visit_decl(&mut self, decl: &Decl) -> Self::DeclResult {
         match decl {
             Decl::Module {
                 visibility,
@@ -141,7 +141,7 @@ impl BrakionTreeVisitor for Printer {
                     module_node.flag("pub");
                 }
                 module_node.descriptor("name", &name.name);
-                for decl in body.iter_mut() {
+                for decl in body.iter() {
                     module_node.field("member", self.visit_decl(decl));
                 }
 
@@ -155,14 +155,21 @@ impl BrakionTreeVisitor for Printer {
                 if visibility.is_public() {
                     f_node.flag("pub");
                 }
-                f_node.node(self.print_function_signature(&mut function.signature));
+                f_node.node(self.print_function_signature(&function.signature));
 
                 let mut body_node = PrinterNode::new("body".to_string());
-                for stmt in function.body.iter_mut() {
+                for stmt in function.body.iter() {
                     body_node.field("stmt", self.visit_stmt(stmt));
                 }
 
                 f_node.node(body_node);
+
+                f_node
+            }
+            Decl::NativeFunction(native_function) => {
+                let mut f_node = PrinterNode::new("fn".to_string());
+                f_node.flag("native");
+                f_node.node(self.print_function_signature(&native_function.signature));
 
                 f_node
             }
@@ -177,30 +184,31 @@ impl BrakionTreeVisitor for Printer {
                 }
                 type_node.descriptor("name", &name.name);
 
-                for variant in body.variants.iter_mut() {
+                for variant in body.variants.iter() {
                     let mut variant_node = PrinterNode::new("variant".to_string());
                     variant_node.descriptor("name", &variant.name.name);
-                    for field in variant.fields.iter_mut() {
+                    for field in variant.fields.iter() {
                         let mut field_node = PrinterNode::new("field".to_string());
                         field_node.descriptor("name", &field.name.name);
-                        field_node.field("type", self.visit_type_reference(&mut field.ty));
+                        field_node.field("type", self.visit_type_reference(&field.ty));
 
                         variant_node.node(field_node);
                     }
                     type_node.node(variant_node);
                 }
-                for method in body.methods.iter_mut() {
+                for method in body.methods.iter() {
                     let mut method_node = PrinterNode::new("method".to_string());
                     if let Visibility::Public = method.0 {
                         method_node.flag("pub");
                     }
-                    method_node.node(self.print_function_signature(&mut method.1.signature));
+                    method_node.node(self.print_function_signature(&method.1.signature));
 
                     let mut body_node = PrinterNode::new("body".to_string());
-                    for stmt in method.1.body.iter_mut() {
+                    for stmt in method.1.body.iter() {
                         body_node.field("stmt", self.visit_stmt(stmt));
                     }
                     method_node.node(body_node);
+                    type_node.node(method_node);
                 }
 
                 type_node
@@ -216,7 +224,7 @@ impl BrakionTreeVisitor for Printer {
                 }
                 trait_node.descriptor("name", &name.name);
 
-                for method in body.methods.iter_mut() {
+                for method in body.methods.iter() {
                     trait_node.field("method", self.print_function_signature(method));
                 }
 
@@ -228,15 +236,15 @@ impl BrakionTreeVisitor for Printer {
                 body,
             } => {
                 let mut impl_node = PrinterNode::new("impl".to_string());
-                impl_node.descriptor("trait", &trait_name);
+                impl_node.descriptor("trait", trait_name);
                 impl_node.descriptor("type", type_name.to_string());
 
-                for decl in body.iter_mut() {
+                for decl in body.iter() {
                     let mut member_node = PrinterNode::new("member".to_string());
-                    member_node.node(self.print_function_signature(&mut decl.signature));
+                    member_node.node(self.print_function_signature(&decl.signature));
 
                     let mut body_node = PrinterNode::new("body".to_string());
-                    for stmt in decl.body.iter_mut() {
+                    for stmt in decl.body.iter() {
                         body_node.field("stmt", self.visit_stmt(stmt));
                     }
                     member_node.node(body_node);
@@ -248,8 +256,8 @@ impl BrakionTreeVisitor for Printer {
         }
     }
 
-    fn visit_stmt(&mut self, stmt: &mut Stmt) -> Self::StmtResult {
-        match &mut stmt.kind {
+    fn visit_stmt(&mut self, stmt: &Stmt) -> Self::StmtResult {
+        match &stmt.kind {
             StmtKind::Expr(e) => {
                 let mut node = PrinterNode::new("expr".to_string());
                 node.field("expr", self.visit_expr(e));
@@ -257,7 +265,7 @@ impl BrakionTreeVisitor for Printer {
             }
             StmtKind::Block(body) => {
                 let mut node = PrinterNode::new("block".to_string());
-                for stmt in body.iter_mut() {
+                for stmt in body.iter() {
                     node.field("stmt", self.visit_stmt(stmt));
                 }
                 node
@@ -314,9 +322,9 @@ impl BrakionTreeVisitor for Printer {
                     None => (),
                 }
 
-                for arm in arms.iter_mut() {
+                for arm in arms.iter() {
                     let mut arm_node = PrinterNode::new("arm".to_string());
-                    match &mut arm.pattern {
+                    match &arm.pattern {
                         MatchPattern::Expr(e) => {
                             arm_node.field("expr", self.visit_expr(e));
                         }
@@ -327,7 +335,7 @@ impl BrakionTreeVisitor for Printer {
                             arm_node.flag("wildcard");
                         }
                     }
-                    arm_node.field("body", self.visit_stmt(&mut arm.body));
+                    arm_node.field("body", self.visit_stmt(&arm.body));
                     node.node(arm_node);
                 }
 
@@ -343,8 +351,8 @@ impl BrakionTreeVisitor for Printer {
         }
     }
 
-    fn visit_expr(&mut self, expr: &mut Expr) -> Self::ExprResult {
-        match &mut expr.kind {
+    fn visit_expr(&mut self, expr: &Expr) -> Self::ExprResult {
+        match &expr.kind {
             ExprKind::Literal(l) => match l {
                 Literal::Int(i) => {
                     let mut node = PrinterNode::new("int".to_string());
@@ -373,7 +381,7 @@ impl BrakionTreeVisitor for Printer {
                 }
                 Literal::List(l) => {
                     let mut node = PrinterNode::new("list".to_string());
-                    for expr in l.iter_mut() {
+                    for expr in l.iter() {
                         node.node(self.visit_expr(expr));
                     }
                     node
@@ -424,7 +432,7 @@ impl BrakionTreeVisitor for Printer {
             }
             ExprKind::Variable(v) => {
                 let mut node = PrinterNode::new("variable".to_string());
-                node.descriptor("name", &v);
+                node.descriptor("name", v);
                 node
             }
             ExprKind::Access { expr, field } => {
@@ -435,9 +443,9 @@ impl BrakionTreeVisitor for Printer {
             }
             ExprKind::FunctionCall { name, args } => {
                 let mut node = PrinterNode::new("call".to_string());
-                node.descriptor("name", &name);
+                node.descriptor("name", name);
                 let mut args_node = PrinterNode::new("args".to_string());
-                for arg in args.iter_mut() {
+                for arg in args.iter() {
                     args_node.node(self.visit_expr(arg));
                 }
                 node.node(args_node);
@@ -448,7 +456,7 @@ impl BrakionTreeVisitor for Printer {
                 node.field("expr", self.visit_expr(expr));
                 node.descriptor("method", &method.name);
                 let mut args_node = PrinterNode::new("args".to_string());
-                for arg in args.iter_mut() {
+                for arg in args.iter() {
                     args_node.node(self.visit_expr(arg));
                 }
                 node.node(args_node);
@@ -464,7 +472,7 @@ impl BrakionTreeVisitor for Printer {
                 let mut node = PrinterNode::new("constructor".to_string());
                 node.descriptor("type", ty);
                 let mut fields_node = PrinterNode::new("fields".to_string());
-                for field in fields.iter_mut() {
+                for field in fields.iter() {
                     match field {
                         FieldConstructor::Named { name, value } => {
                             let mut field_node = PrinterNode::new("named".to_string());
@@ -485,8 +493,8 @@ impl BrakionTreeVisitor for Printer {
         }
     }
 
-    fn visit_type_reference(&mut self, ty: &mut TypeReference) -> Self::TypeReferenceResult {
-        match &mut ty.kind {
+    fn visit_type_reference(&mut self, ty: &TypeReference) -> Self::TypeReferenceResult {
+        match &ty.kind {
             TypeReferenceKind::Void => PrinterNode::new("void".to_string()),
             TypeReferenceKind::Named(name) => {
                 let mut node = PrinterNode::new("named".to_string());
@@ -500,7 +508,7 @@ impl BrakionTreeVisitor for Printer {
             }
             TypeReferenceKind::Union(tys) => {
                 let mut node = PrinterNode::new("union".to_string());
-                for ty in tys.iter_mut() {
+                for ty in tys.iter() {
                     node.node(self.visit_type_reference(ty));
                 }
                 node

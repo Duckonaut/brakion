@@ -131,7 +131,7 @@ impl Display for NamespacedIdentifier {
 /// For this reason, the visitor is generic over the result type of each operation.
 /// For example, the type checker can return a `Result<Type, TypeError>` for an expression,
 /// but a `Result<(), TypeError>` for a statement since statements don't have a type.
-pub trait BrakionTreeVisitor {
+pub trait BrakionTreeVisitorMut {
     type ExprResult;
     type StmtResult;
     type DeclResult;
@@ -141,6 +141,18 @@ pub trait BrakionTreeVisitor {
     fn visit_stmt(&mut self, stmt: &mut Stmt) -> Self::StmtResult;
     fn visit_expr(&mut self, expr: &mut Expr) -> Self::ExprResult;
     fn visit_type_reference(&mut self, ty: &mut TypeReference) -> Self::TypeReferenceResult;
+}
+
+pub trait BrakionTreeVisitor {
+    type ExprResult;
+    type StmtResult;
+    type DeclResult;
+    type TypeReferenceResult;
+
+    fn visit_decl(&mut self, decl: &Decl) -> Self::DeclResult;
+    fn visit_stmt(&mut self, stmt: &Stmt) -> Self::StmtResult;
+    fn visit_expr(&mut self, expr: &Expr) -> Self::ExprResult;
+    fn visit_type_reference(&mut self, ty: &TypeReference) -> Self::TypeReferenceResult;
 }
 
 /// Try to interpret an expression as a type reference.

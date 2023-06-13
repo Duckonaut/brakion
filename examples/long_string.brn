@@ -1,4 +1,4 @@
-fn main() {
+fn main(args: [str]) -> i32 {
     var s: str =
 "Lorem ipsum dolor sit amet,
 consectetur adipiscing elit,
@@ -16,7 +16,8 @@ Excepteur sint occaecat cupidatat
 non proident, sunt in culpa qui
 officia deserunt mollit anim id est laborum.
 ";
-    var f: std::io::File = std::io::open("test.txt", std::io::OpenMode::Write);
-    f.write(s);
-    f.close();
+
+    std::io::println(s);
+
+    return 0;
 }

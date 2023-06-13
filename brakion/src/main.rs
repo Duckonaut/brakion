@@ -1,7 +1,7 @@
 use std::{io::Read, path::PathBuf};
 
-use brakion_core::Brakion;
-use clap::Parser;
+use brakion_core::{Brakion, interpreter::value::Value};
+use clap::{Parser, ValueEnum};
 use colored::Colorize;
 
 #[derive(Debug, Clone, Parser)]
@@ -11,47 +11,85 @@ use colored::Colorize;
     about = "The Brakion Language"
 )]
 struct Args {
-    #[clap(help = "The file to interpret")]
-    file: PathBuf,
+    /// The mode to run in
+    #[clap(value_enum, help = "The mode to run in")]
+    mode: Mode,
+    #[clap(help = "The files to run")]
+    files: Vec<PathBuf>,
+    #[clap(
+        allow_hyphen_values = true,
+        last = true,
+        help = "The arguments to pass to the program"
+    )]
+    extra_args: Vec<String>,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, ValueEnum, Debug)]
+enum Mode {
+    Check,
+    Run,
 }
 
 fn main() {
     let args = Args::parse();
     let config = brakion_core::Config::default();
 
-    let filepath = args.file;
+    let mut brakion = Brakion::new(config);
 
-    if filepath.to_str().unwrap() == "-" {
-        let reader = std::io::stdin();
-        let mut buffer = String::new();
-        reader.lock().read_to_string(&mut buffer).unwrap();
+    for filepath in args.files {
+        if filepath.to_str().unwrap() == "-" {
+            let reader = std::io::stdin();
+            let mut buffer = String::new();
+            reader.lock().read_to_string(&mut buffer).unwrap();
 
-        let mut brakion = Brakion::new(config);
+            brakion.add_unit("stdin".to_string(), std::io::Cursor::new(buffer));
+        } else {
+            if !filepath.exists() {
+                eprintln!("File {} does not exist", filepath.to_str().unwrap());
+                std::process::exit(1);
+            }
+            let file = std::fs::File::open(filepath.clone()).expect("Could not open file");
 
-        brakion.add_unit("<stdin>".to_string(), std::io::Cursor::new(buffer));
+            brakion.add_unit(filepath.to_str().unwrap().to_string(), file);
+        }
+    }
 
-        let result = brakion.check();
+    match args.mode {
+        Mode::Check => {
+            let errors = brakion.check();
 
-        match result {
-            Ok(_) => println!("{}", "No errors found".green().bold()),
-            Err(errors) => {
-                println!("{} errors found", errors.len().to_string().red().bold());
+            if let Err(errors) = errors {
+                if errors.len() == 1 {
+                    println!("{} {}", errors.len(), "error found!".red().bold());
+                } else {
+                    println!("{} {}", errors.len(), "errors found!".red().bold());
+                }
+            } else {
+                println!("{}", "No errors found".green());
             }
         }
-    } else {
-        let file = std::fs::File::open(filepath.clone()).expect("Could not open file");
-        let mut brakion = Brakion::new(config);
+        Mode::Run => {
+            let extra_args = args
+                .extra_args
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>();
+            let result = brakion.run(&extra_args);
 
-        brakion.add_unit(filepath.to_str().unwrap().to_string(), file);
-
-        let result = brakion.check();
-
-        println!();
-
-        match result {
-            Ok(_) => println!("{}", "No errors found".green().bold()),
-            Err(errors) => {
-                println!("{} errors found", errors.len().to_string().red().bold());
+            match result {
+                Err(errors) => {
+                    if errors.len() == 1 {
+                        println!("{} {}", errors.len(), "error found!".red().bold());
+                    } else {
+                        println!("{} {}", errors.len(), "errors found!".red().bold());
+                    }
+                }
+                Ok(Value::I32(i)) => {
+                    std::process::exit(i);
+                }
+                Ok(_) => {
+                    unreachable!();
+                }
             }
         }
     }

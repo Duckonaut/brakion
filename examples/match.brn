@@ -23,6 +23,10 @@ type Tristate {
         value: bool,
     }
 
+    pub fn new(value: bool) -> Self {
+        return Self::Some -> { value: value };
+    }
+
     pub fn is_some(self) -> bool {
         return self is Self::Some;
     }
@@ -35,14 +39,25 @@ type Tristate {
         if self is Self::Some {
             return self.value;
         } else {
-            std::io::eprintln("unwrap called on None");
-            return std::os::exit(1);
+            std::io::println("unwrap called on None");
+            std::exit(1);
         }
+
+        return false;
     }
 }
 
 fn main(args: [str]) -> i32 {
     var foo: Foo = Foo -> { a: 1, b: 2, c: 3.0, d: 4.0 };
 
-    std::io::println("{}", foo.foo());
+    std::io::println(std::i32::to_str(foo.foo()));
+
+    var tristate = Tristate::new(false);
+
+    if tristate.is_some() {
+        std::io::println("tristate is some");
+        std::io::println(std::bool::to_str(tristate.unwrap()));
+    }
+
+    return 0;
 }

@@ -1,9 +1,16 @@
 type Foo;
 
 trait Bar {
-    fn baz() -> void;
+    fn baz(self) -> void;
 }
 
 impl Bar for Foo {
-    fn baz() -> void { }
+    fn baz(self) -> void { std::io::println("impl Bar for Foo"); }
+}
+
+fn main(args: [str]) -> i32 {
+    var x = Foo -> {};
+
+    Bar::baz(x);
+    return 0;
 }

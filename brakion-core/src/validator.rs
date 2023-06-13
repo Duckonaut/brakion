@@ -1,13 +1,14 @@
 use std::{cell::UnsafeCell, collections::HashMap};
 
 use crate::{
+    builtin::list_methods,
     errors::{validator::ValidatorError, ErrorModule},
     repr::{
-        list_method_signatures, look_up_decl, look_up_module_mut, string_method_signatures,
-        BinaryOp, BrakionTreeVisitor, Decl, Expr, ExprKind, FieldConstructor, Function,
-        FunctionSignature, Identifier, IntSize, Literal, MatchPattern, NamespaceReference,
-        NamespacedIdentifier, Parameter, ParameterSpec, Stmt, StmtKind, TraitBody, TypeBinaryOp,
-        TypeBody, TypeReference, TypeReferenceKind, TypeVariant, UnaryOp, Visibility,
+        look_up_decl, look_up_module_mut, BinaryOp, BrakionTreeVisitorMut, Decl, Expr, ExprKind,
+        FieldConstructor, Function, FunctionSignature, Identifier, IntSize, Literal, MatchPattern,
+        NamespaceReference, NamespacedIdentifier, NativeFunction, Parameter, ParameterSpec, Stmt,
+        StmtKind, TraitBody, TypeBinaryOp, TypeBody, TypeReference, TypeReferenceKind, TypeVariant,
+        UnaryOp, Visibility,
     },
     unit::Span,
 };
@@ -22,6 +23,7 @@ pub struct Validator<'a> {
     current_trait: Option<NamespacedIdentifier>,
     current_function_return_type: Option<TypeReferenceKind>,
     in_loop: bool,
+    main_function_name: Option<NamespacedIdentifier>,
 }
 
 struct ExecutionScope {
@@ -39,6 +41,7 @@ impl<'a> Validator<'a> {
             current_trait: None,
             current_function_return_type: None,
             in_loop: false,
+            main_function_name: None,
         }
     }
 
@@ -213,6 +216,19 @@ impl<'a> Validator<'a> {
         None
     }
 
+    fn look_up_native_function(
+        &self,
+        name: &mut NamespacedIdentifier,
+    ) -> Option<&'a NativeFunction> {
+        let decl = look_up_decl(self.root(), name);
+
+        if let Some(NamespaceReference::Decl(Decl::NativeFunction(function))) = decl {
+            return Some(function);
+        }
+
+        None
+    }
+
     fn begin_scope(&mut self) {
         self.execution_scopes.push(ExecutionScope {
             variables: Vec::new(),
@@ -336,7 +352,7 @@ impl<'a> Validator<'a> {
             if !function.signature.name.same(&name) {
                 return Err((
                     ValidatorError::PreconditionNameMismatch(
-                        name.name.clone(),
+                        name.name,
                         function.signature.name.name.clone(),
                     ),
                     Some(function.signature.name.span),
@@ -519,22 +535,36 @@ impl<'a> Validator<'a> {
         // in a column, then there must be either a single catch-all function, being the same row
         // in all columns, or the preconditions must be exhaustive.
 
-        let parameter_precondition_matrix = functions
-            .iter()
-            .map(|f| {
-                f.signature
-                    .parameters
-                    .iter()
-                    .map(|p| match &p.kind {
-                        ParameterSpec::Basic => None,
-                        ParameterSpec::Preconditioned(p) => Some(p.clone()),
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
+        let mut parameter_precondition_matrix = Vec::new();
 
+        for f in functions.iter_mut() {
+            let mut row = f
+                .signature
+                .parameters
+                .iter_mut()
+                .map(|p| match &p.kind {
+                    ParameterSpec::Basic => None,
+                    ParameterSpec::Preconditioned(p) => Some(p.clone()),
+                })
+                .collect::<Vec<_>>();
+
+            if f.signature.takes_self {
+                if let Some(self_precondition) = &mut f.signature.self_precondition {
+                    let canon_self_precondition = self.visit_type_reference(self_precondition);
+
+                    if let Err((err, span)) = canon_self_precondition {
+                        return Err((err, span));
+                    }
+                    self_precondition.kind = canon_self_precondition.unwrap();
+                    row.insert(0, Some(self_precondition.clone()));
+                } else {
+                    row.insert(0, None);
+                }
+            }
+            parameter_precondition_matrix.push(row);
+        }
         // Check if precondition columns are valid.
-        for (i, row) in parameter_precondition_matrix.iter().enumerate() {
+        for row in parameter_precondition_matrix.iter() {
             for (j, precondition) in row.iter().enumerate() {
                 if precondition.is_some()
                     && !variant_names[j]
@@ -632,6 +662,23 @@ impl<'a> Validator<'a> {
             }
         }
 
+        // check if every variant combination is covered by checking all
+        // possible combinations of variants and checking that against the precondition matrix.
+        let variant_combinations = Self::generate_variant_combinations(&variant_names);
+
+        for variant_combination in variant_combinations {
+            if !parameter_precondition_matrix.iter().any(|row| {
+                row.iter()
+                    .zip(variant_combination.iter())
+                    .all(|(p, v)| p.is_none() || p.as_ref().unwrap().kind.same(v))
+            }) {
+                return Err((
+                    ValidatorError::PreconditionNotExhaustive(name.name),
+                    Some(functions[0].signature.name.span),
+                ));
+            }
+        }
+
         // At this point, we checked everything we could, we can now collapse the functions.
 
         let precond_stripped_params = functions
@@ -679,7 +726,55 @@ impl<'a> Validator<'a> {
 
             let mut condition = None;
 
-            for (param_name, precond) in parameter_names.iter().zip(preconditions).rev() {
+            if should_take_self {
+                if let Some(self_precondition) = &function.signature.self_precondition {
+                    condition = Some(Expr {
+                        span: og_span,
+                        kind: ExprKind::TypeBinary {
+                            op: TypeBinaryOp::Is,
+                            expr: Box::new(Expr {
+                                span: og_span,
+                                kind: ExprKind::Variable(NamespacedIdentifier {
+                                    namespace: vec![],
+                                    ident: Identifier::new(og_span, "self".to_string()),
+                                }),
+                            }),
+                            ty: self_precondition.clone(),
+                        },
+                    });
+
+                    branch_body.insert(
+                        0,
+                        Stmt {
+                            span: self_precondition.span.unwrap(),
+                            kind: StmtKind::Variable {
+                                name: Identifier::new(og_span, "self".to_string()),
+                                ty: self_precondition.clone(),
+                                value: Expr {
+                                    span: og_span,
+                                    kind: ExprKind::TypeBinary {
+                                        op: TypeBinaryOp::As,
+                                        expr: Box::new(Expr {
+                                            span: og_span,
+                                            kind: ExprKind::Variable(NamespacedIdentifier {
+                                                namespace: vec![],
+                                                ident: Identifier::new(og_span, "self".to_string()),
+                                            }),
+                                        }),
+                                        ty: self_precondition.clone(),
+                                    },
+                                },
+                            },
+                        },
+                    );
+                }
+            }
+
+            for (param_name, precond) in parameter_names
+                .iter()
+                .zip(preconditions.iter().skip(1))
+                .rev()
+            {
                 if precond.is_none() {
                     continue;
                 }
@@ -750,7 +845,6 @@ impl<'a> Validator<'a> {
                     },
                 );
             }
-            
 
             if i == function_last_index {
                 collapsed_body_statements.extend(branch_body);
@@ -786,6 +880,39 @@ impl<'a> Validator<'a> {
         };
 
         Ok(collapsed_function)
+    }
+
+    fn generate_variant_combinations(
+        variant_columns: &[Vec<TypeReferenceKind>],
+    ) -> Vec<Vec<&TypeReferenceKind>> {
+        if variant_columns.len() == 1 {
+            return variant_columns
+                .first()
+                .unwrap()
+                .iter()
+                .map(|v| vec![v])
+                .collect();
+        }
+
+        let mut combinations: Vec<Vec<&TypeReferenceKind>> = vec![];
+
+        for variant_column in variant_columns {
+            let combinations_for_variant_column =
+                Self::generate_variant_combinations(&variant_columns[1..variant_columns.len()]);
+
+            for variant in variant_column {
+                let mut combinations_for_variant_column_cell =
+                    combinations_for_variant_column.clone();
+
+                combinations_for_variant_column_cell
+                    .iter_mut()
+                    .for_each(|c| c.insert(0, variant));
+
+                combinations.append(&mut combinations_for_variant_column_cell);
+            }
+        }
+
+        combinations
     }
 
     fn validate_function(
@@ -903,6 +1030,16 @@ impl<'a> Validator<'a> {
             seen.push(&param.name.name);
 
             param.ty.kind = self.visit_type_reference(&mut param.ty)?;
+
+            if let ParameterSpec::Preconditioned(precond) = &mut param.kind {
+                precond.kind = self.visit_type_reference(precond)?;
+            }
+        }
+
+        if signature.takes_self {
+            if let Some(precond) = &mut signature.self_precondition {
+                precond.kind = self.visit_type_reference(precond)?;
+            }
         }
 
         signature.return_type.kind = self.visit_type_reference(&mut signature.return_type)?;
@@ -915,7 +1052,7 @@ impl<'a> Validator<'a> {
         name: &NamespacedIdentifier,
         signature: &FunctionSignature,
         self_type_ref: &Option<TypeReferenceKind>,
-        args: &mut [Expr],
+        args: &mut [&mut Expr],
     ) -> Result<(), (ValidatorError, Option<Span>)> {
         if signature.takes_self {
             let self_type_ref = self.visit_type_reference(&mut TypeReference {
@@ -1061,11 +1198,11 @@ impl<'a> Validator<'a> {
                     }
                 }
                 Decl::Module { name, body, .. } => {
-                    self.module_stack.push(name.name.clone());
+                    self.begin_module(name.name.clone());
 
                     self.validate_function_signatures(body);
 
-                    self.module_stack.pop();
+                    self.end_module();
                 }
                 Decl::Type {
                     name,
@@ -1124,6 +1261,7 @@ impl<'a> Validator<'a> {
 
                     self.current_trait = None;
                 }
+                Decl::NativeFunction(_) => {}
             }
         }
     }
@@ -1158,7 +1296,9 @@ impl<'a> Validator<'a> {
 
         let mut out = Vec::new();
 
-        for ((_, fns), (_, v)) in collapse_map.iter_mut().zip(visibility_map.iter()) {
+        for (key, fns) in collapse_map.iter_mut() {
+            let v = visibility_map.get_mut(key).unwrap();
+
             if fns.len() == 1 {
                 out.push((*v, fns.pop().unwrap()));
                 continue;
@@ -1248,11 +1388,15 @@ impl<'a> Validator<'a> {
         for decl in decls.iter_mut() {
             match decl {
                 Decl::Module { name, body, .. } => {
-                    self.module_stack.push(name.name.clone());
+                    self.begin_module(name.name.clone());
 
-                    self.collapse_all_function_decls(body)?;
+                    let result = self.collapse_all_function_decls(body);
 
-                    self.module_stack.pop();
+                    if let Err((err, span)) = result {
+                        self.error(err, span);
+                    }
+
+                    self.end_module();
                 }
                 Decl::Type {
                     name,
@@ -1351,6 +1495,44 @@ impl<'a> Validator<'a> {
         }
     }
 
+    fn get_decl_name(decl: &Decl) -> Option<&Identifier> {
+        match decl {
+            Decl::Module { name, .. } => Some(name),
+            Decl::Function { function, .. } => Some(&function.signature.name),
+            Decl::Type { name, .. } => Some(name),
+            Decl::Trait { name, .. } => Some(name),
+            _ => None,
+        }
+    }
+
+    fn check_duplicate_names(&mut self, decls: &[Decl]) {
+        for (i, sdecl) in decls.iter().enumerate() {
+            if let Decl::Module { .. } = sdecl {
+                continue;
+            }
+            let name = Self::get_decl_name(sdecl);
+
+            if let Some(name) = name {
+                for (j, decl) in decls.iter().enumerate() {
+                    if i == j {
+                        continue;
+                    }
+
+                    let other_name = Self::get_decl_name(decl);
+
+                    if let Some(other_name) = other_name {
+                        if name.same(other_name) {
+                            self.error(
+                                ValidatorError::NamespaceCollision(name.name.to_string()),
+                                Some(name.span),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub fn check(&mut self) {
         let root = self.root();
 
@@ -1362,13 +1544,19 @@ impl<'a> Validator<'a> {
             self.error(err, span);
         }
 
+        self.check_duplicate_names(root); // after collapsing functions
+
         for decl in root.iter_mut() {
             Self::visit_decl(self, decl);
         }
     }
+
+    pub fn get_main(&self) -> Option<NamespacedIdentifier> {
+        self.main_function_name.clone()
+    }
 }
 
-impl<'a> BrakionTreeVisitor for Validator<'a> {
+impl<'a> BrakionTreeVisitorMut for Validator<'a> {
     type ExprResult = Result<TypeReferenceKind, (ValidatorError, Option<Span>)>;
     type StmtResult = Result<(), (ValidatorError, Option<Span>)>;
     type DeclResult = ();
@@ -1379,6 +1567,8 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
             Decl::Module { name, body, .. } => {
                 self.begin_module(name.name.clone());
 
+                self.check_duplicate_names(body);
+
                 for decl in body.iter_mut() {
                     Self::visit_decl(self, decl);
                 }
@@ -1386,6 +1576,43 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                 self.end_module();
             }
             Decl::Function { function, .. } => {
+                if function.signature.name.name == "main" {
+                    if function
+                        .signature
+                        .return_type
+                        .kind
+                        .same(&TypeReferenceKind::Integer(IntSize::I32, true))
+                        && !function.signature.takes_self
+                        && function.signature.parameters.len() == 1
+                        && function.signature.parameters[0]
+                            .ty
+                            .kind
+                            .same(&TypeReferenceKind::List(Box::new(TypeReference {
+                                kind: TypeReferenceKind::String,
+                                span: None,
+                            })))
+                    {
+                        if self.main_function_name.is_none() {
+                            let namespaced_name = NamespacedIdentifier::new_from_parts(
+                                &self.module_stack,
+                                function.signature.name.name.clone(),
+                                function.signature.name.span,
+                            );
+
+                            self.main_function_name = Some(namespaced_name);
+                        } else {
+                            self.error(
+                                ValidatorError::DuplicateMainFunction,
+                                Some(function.signature.name.span),
+                            );
+                        }
+                    } else {
+                        self.error(
+                            ValidatorError::InvalidMainFunction,
+                            Some(function.signature.name.span),
+                        );
+                    }
+                }
                 let result = self.validate_function(function);
 
                 if let Err(err) = result {
@@ -1535,6 +1762,9 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                 }
 
                 self.current_type = None;
+            }
+            Decl::NativeFunction(_) => {
+                // Native functions are known to be good.
             }
         }
     }
@@ -2021,7 +2251,7 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                         Ok(TypeReferenceKind::Bool)
                     }
                     BinaryOp::Eq | BinaryOp::Neq => {
-                        if !left.same(&right) {
+                        if !((left.is_numeric() && right.is_numeric()) || left.same(&right)) {
                             return Err((
                                 ValidatorError::BinaryOpTypeMismatch(
                                     op.clone(),
@@ -2195,9 +2425,31 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                 let function = self.look_up_function(name);
 
                 if let Some(function) = function {
-                    self.validate_function_call(name, &function.signature, &None, args)?;
+                    let mut args = args.iter_mut().collect::<Vec<&mut Expr>>();
+                    self.validate_function_call(name, &function.signature, &None, &mut args)?;
 
                     return Ok(function.signature.return_type.clone().kind);
+                }
+
+                let native_function = self.look_up_native_function(name);
+
+                if let Some(native_function) = native_function {
+                    let mut args = args.iter_mut().collect::<Vec<&mut Expr>>();
+                    self.validate_function_call(
+                        name,
+                        &native_function.signature,
+                        &None,
+                        &mut args,
+                    )?;
+
+                    return Ok(native_function.signature.return_type.clone().kind);
+                }
+
+                if name.namespace.is_empty() {
+                    return Err((
+                        ValidatorError::UnknownFunction(name.clone()),
+                        Some(expr.span),
+                    ));
                 }
 
                 let type_body = self.look_up_type_body(&mut name.up());
@@ -2209,9 +2461,6 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                         .find(|(_, method)| method.signature.name.same(&name.ident));
 
                     if method.is_none() {
-                        if name.ident.name == "from_str" {
-                            dbg!(&type_body);
-                        }
                         return Err((
                             ValidatorError::UnknownFunction(name.clone()),
                             Some(expr.span),
@@ -2220,18 +2469,31 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
 
                     let (visibility, method) = method.unwrap();
 
-                    // TODO: check visibility
+                    if !visibility.is_public()
+                        && !name
+                            .namespace
+                            .iter()
+                            .zip(self.module_stack.iter())
+                            .all(|(f, m)| f.name == *m)
+                    {
+                        return Err((
+                            ValidatorError::PrivateFunctionCall(name.to_string()),
+                            Some(expr.span),
+                        ));
+                    }
 
                     let type_ref = TypeReference {
                         kind: TypeReferenceKind::Named(name.up()),
                         span: None,
                     };
 
+                    let mut args = args.iter_mut().collect::<Vec<&mut Expr>>();
+
                     self.validate_function_call(
                         name,
                         &method.signature,
                         &Some(type_ref.kind),
-                        args,
+                        &mut args,
                     )?;
 
                     return Ok(method.signature.return_type.kind.clone());
@@ -2259,7 +2521,8 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                         span: None,
                     };
 
-                    self.validate_function_call(name, method, &Some(type_ref.kind), args)?;
+                    let mut args = args.iter_mut().collect::<Vec<&mut Expr>>();
+                    self.validate_function_call(name, method, &Some(type_ref.kind), &mut args)?;
 
                     return Ok(method.return_type.kind.clone());
                 }
@@ -2295,21 +2558,33 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                                 ValidatorError::UnknownFunction(
                                     method_name.clone().into_namespaced(),
                                 ),
-                                Some(expr.span),
+                                Some(method_name.span),
                             ));
                         }
 
                         let (visibility, method) = method.unwrap();
 
-                        // TODO: check visibility
+                        if (self.current_type.is_none()
+                            || self.current_type.as_ref().unwrap() != &type_name)
+                            && !visibility.is_public()
+                        {
+                            return Err((
+                                ValidatorError::PrivateMethodCall(method_name.name.clone()),
+                                Some(expr.span),
+                            ));
+                        }
 
                         let type_ref = TypeReference {
                             kind: TypeReferenceKind::Named(type_name.clone()),
                             span: None,
                         };
 
-                        let mut args_with_self = args.clone();
-                        args_with_self.insert(0, (**expr).clone());
+                        let mut args_with_self = Vec::new();
+                        args_with_self.push(expr.as_mut());
+
+                        for arg in args.iter_mut() {
+                            args_with_self.push(arg);
+                        }
 
                         self.validate_function_call(
                             &method_name.namespaced(),
@@ -2321,11 +2596,11 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                         Ok(method.signature.return_type.kind.clone())
                     }
                     TypeReferenceKind::List(ref t) => {
-                        let valid_methods = list_method_signatures(t);
+                        let valid_methods = list_methods(t);
 
                         let method = valid_methods
                             .iter()
-                            .find(|method| method.name.same(method_name));
+                            .find(|method| method.signature.name.same(method_name));
 
                         if method.is_none() {
                             return Err((
@@ -2338,49 +2613,21 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
 
                         let method = method.unwrap();
 
-                        let mut args_with_self = args.clone();
+                        let mut args_with_self = Vec::new();
+                        args_with_self.push(expr.as_mut());
 
-                        args_with_self.insert(0, (**expr).clone());
-
-                        self.validate_function_call(
-                            &method_name.namespaced(),
-                            method,
-                            &Some(expr_type.clone()),
-                            &mut args_with_self,
-                        )?;
-
-                        Ok(method.return_type.kind.clone())
-                    }
-                    TypeReferenceKind::String => {
-                        let valid_methods = string_method_signatures();
-
-                        let method = valid_methods
-                            .iter()
-                            .find(|method| method.name.same(method_name));
-
-                        if method.is_none() {
-                            return Err((
-                                ValidatorError::UnknownFunction(
-                                    method_name.clone().into_namespaced(),
-                                ),
-                                Some(expr.span),
-                            ));
+                        for arg in args.iter_mut() {
+                            args_with_self.push(arg);
                         }
 
-                        let method = method.unwrap();
-
-                        let mut args_with_self = args.clone();
-
-                        args_with_self.insert(0, (**expr).clone());
-
                         self.validate_function_call(
                             &method_name.namespaced(),
-                            method,
+                            &method.signature,
                             &Some(expr_type.clone()),
                             &mut args_with_self,
                         )?;
 
-                        Ok(method.return_type.kind.clone())
+                        Ok(method.signature.return_type.kind.clone())
                     }
                     _ => Err((
                         ValidatorError::MethodOnNonType(expr_type.to_string()),
@@ -2395,7 +2642,7 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                     TypeReferenceKind::List(ref t) => {
                         let index_type = Self::visit_expr(self, index)?;
 
-                        if !index_type.is_integer() {
+                        if !matches!(index_type, TypeReferenceKind::Integer(_, false)) {
                             return Err((
                                 ValidatorError::IndexNotInt(
                                     expr_type.to_string(),
@@ -2428,25 +2675,31 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                     )),
                 }
             }
-            ExprKind::Constructor { ty, fields } => {
-                let type_body = self.look_up_type_body(ty);
+            ExprKind::Constructor {
+                ty: ctor_ty,
+                fields,
+            } => {
+                let type_body = self.look_up_type_body(ctor_ty);
 
                 let variant = if let Some(type_body) = type_body {
                     if !(type_body.variants.len() == 1
                         && type_body.variants.first().unwrap().name.name == "self")
                     {
                         return Err((
-                            ValidatorError::ConstructorOfVariantedType(ty.clone()),
+                            ValidatorError::ConstructorOfVariantedType(ctor_ty.clone()),
                             Some(span),
                         ));
                     }
 
                     type_body.variants.first().unwrap()
                 } else {
-                    let variant = self.look_up_type_variant(ty);
+                    let variant = self.look_up_type_variant(ctor_ty);
 
                     if variant.is_none() {
-                        return Err((ValidatorError::UnknownType(ty.clone()), Some(ty.span())));
+                        return Err((
+                            ValidatorError::UnknownType(ctor_ty.clone()),
+                            Some(ctor_ty.span()),
+                        ));
                     }
 
                     variant.unwrap()
@@ -2460,7 +2713,7 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                             if fields_constructed.contains(&name.name) {
                                 return Err((
                                     ValidatorError::ConstructorFieldDuplicate(
-                                        ty.clone(),
+                                        ctor_ty.clone(),
                                         name.name.clone(),
                                     ),
                                     Some(name.span),
@@ -2472,7 +2725,10 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
 
                             if type_field.is_none() {
                                 return Err((
-                                    ValidatorError::UnknownField(ty.clone(), name.name.clone()),
+                                    ValidatorError::UnknownField(
+                                        ctor_ty.clone(),
+                                        name.name.clone(),
+                                    ),
                                     Some(name.span),
                                 ));
                             }
@@ -2491,7 +2747,7 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                             if !compatible.unwrap() {
                                 return Err((
                                     ValidatorError::ConstructorFieldTypeMismatch(
-                                        ty.clone(),
+                                        ctor_ty.clone(),
                                         name.name.clone(),
                                         type_field.ty.kind.to_string(),
                                         value_type.to_string(),
@@ -2506,7 +2762,7 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                             if fields_constructed.contains(&name.name) {
                                 return Err((
                                     ValidatorError::ConstructorFieldDuplicate(
-                                        ty.clone(),
+                                        ctor_ty.clone(),
                                         name.name.clone(),
                                     ),
                                     Some(name.span),
@@ -2529,7 +2785,10 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
 
                             if type_field.is_none() {
                                 return Err((
-                                    ValidatorError::UnknownField(ty.clone(), name.name.clone()),
+                                    ValidatorError::UnknownField(
+                                        ctor_ty.clone(),
+                                        name.name.clone(),
+                                    ),
                                     Some(span),
                                 ));
                             }
@@ -2548,7 +2807,7 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                             if !compatible.unwrap() {
                                 return Err((
                                     ValidatorError::ConstructorFieldTypeMismatch(
-                                        ty.clone(),
+                                        ctor_ty.clone(),
                                         name.name.clone(),
                                         type_field.ty.kind.to_string(),
                                         variable.kind.to_string(),
@@ -2566,7 +2825,7 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                     if !fields_constructed.contains(&field.name.name) {
                         return Err((
                             ValidatorError::ConstructorFieldMissing(
-                                ty.clone(),
+                                ctor_ty.clone(),
                                 field.name.name.clone(),
                             ),
                             Some(span),
@@ -2574,7 +2833,7 @@ impl<'a> BrakionTreeVisitor for Validator<'a> {
                     }
                 }
 
-                Ok(TypeReferenceKind::Named(ty.clone()))
+                Ok(TypeReferenceKind::Named(ctor_ty.clone()))
             }
         }
     }

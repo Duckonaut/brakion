@@ -1,50 +1,3 @@
-mod std {
-    trait Display {
-        fn display(self) -> str;
-    }
-    mod io {
-        fn println(s: str) {}
-    }
-    mod i32 {
-        fn to_str(x: i32) -> str {
-            # empty
-            return "";
-        }
-        fn parse(s: str) -> i32 | void {
-            # empty
-            return 0;
-        }
-    }
-    mod bool {
-        fn to_str(x: bool) -> str {
-            # empty
-            return "";
-        }
-    }
-    mod char {
-        fn is_digit(c: char) -> bool {
-            return false;
-        }
-
-        fn is_alpha(c: char) -> bool {
-            return false;
-        }
-
-        fn is_whitespace(c: char) -> bool {
-            return false;
-        }
-    }
-    mod str {
-        fn len(s: str) -> u64 {
-            return 0;
-        }
-
-        fn is_digit(s: str) -> bool {
-            return false;
-        }
-    }
-}
-
 impl std::Display for Value {
     fn display(self) -> str {
         match self {
@@ -186,7 +139,7 @@ type Value {
 
     pub fn from_str(s: str) -> Self | void {
         match s {
-            on std::str::is_digit(s)
+            on std::str::is_integer(s)
                 return Self::Integer -> { value: std::i32::parse(s) as i32 };
             on "true"
                 return Self::Boolean -> { value: true };
@@ -213,7 +166,61 @@ type Parenthesis {
 
 type Token {
     self {
-        value: Value | BinaryOperator | UnaryOperator | Parenthesis,
+        value: Value | BinaryOperator | UnaryOperator | Parenthesis | void,
+    }
+}
+
+impl std::Display for Token {
+    fn display(self) -> str {
+        var value = self.value;
+        match value {
+            on Value
+                return std::Display::display(value);
+            on BinaryOperator
+                match value {
+                    on BinaryOperator::Add
+                        return "+";
+                    on BinaryOperator::Subtract
+                        return "-";
+                    on BinaryOperator::Multiply
+                        return "*";
+                    on BinaryOperator::Divide
+                        return "/";
+                    on BinaryOperator::Equal
+                        return "==";
+                    on BinaryOperator::NotEqual
+                        return "!=";
+                    on BinaryOperator::Greater
+                        return ">";
+                    on BinaryOperator::GreaterEqual
+                        return ">=";
+                    on BinaryOperator::Less
+                        return "<";
+                    on BinaryOperator::LessEqual
+                        return "<=";
+                    on BinaryOperator::And
+                        return "and";
+                    on BinaryOperator::Or
+                        return "or";
+                }
+            on UnaryOperator
+                match value {
+                    on UnaryOperator::Negate
+                        return "-";
+                    on UnaryOperator::Not
+                        return "not";
+                }
+            on Parenthesis
+                match value {
+                    on Parenthesis::Open
+                        return "(";
+                    on Parenthesis::Close
+                        return ")";
+                }
+            on void
+                return "EOF";
+        }
+        return "no match";
     }
 }
 
@@ -252,6 +259,7 @@ type Lexer {
         source: str,
         tokens: [Token],
         current: i32,
+        len: u64,
     }
 
     pub fn new(source: str) -> Self {
@@ -259,19 +267,23 @@ type Lexer {
             source,
             tokens: [],
             current: 0,
+            len: std::str::len(source),
         };
     }
 
     pub fn lex(self) -> [Token] {
-        while self.current < std::str::len(self.source) {
+        while self.current < self.len {
             self.lex_token();
         }
+
+        self.tokens.push(Token -> { value: void });
 
         return self.tokens;
     }
 
     fn skip_whitespace(self) {
-        while std::char::is_whitespace(self.source[self.current]) {
+        while self.current < self.len
+            and std::char::is_whitespace(self.source[self.current]) {
             self.advance();
         }
     }
@@ -281,46 +293,89 @@ type Lexer {
     }
 
     fn lex_token(self) {
-        var c: char = self.source[self.current];
-
         self.skip_whitespace();
 
+        var c: char = self.source[self.current];
+
         match c {
-            on '(' self.tokens.push(Token -> { value: Parenthesis::Open -> {} });
-            on ')' self.tokens.push(Token -> { value: Parenthesis::Close -> {} });
-            on '+' self.tokens.push(Token -> { value: BinaryOperator::Add -> {} });
-            on '-' self.tokens.push(Token -> { value: BinaryOperator::Subtract -> {} });
-            on '*' self.tokens.push(Token -> { value: BinaryOperator::Multiply -> {} });
-            on '/' self.tokens.push(Token -> { value: BinaryOperator::Divide -> {} });
+            on '(' {
+                self.tokens.push(Token -> { value: Parenthesis::Open -> {} });
+                self.advance();
+            }
+            on ')' {
+                self.tokens.push(Token -> { value: Parenthesis::Close -> {} });
+                self.advance();
+            }
+            on '+' {
+                self.tokens.push(Token -> { value: BinaryOperator::Add -> {} });
+                self.advance();
+            }
+            on '-' {
+                self.tokens.push(Token -> { value: BinaryOperator::Subtract -> {} });
+                self.advance();
+            }
+            on '*' {
+                self.tokens.push(Token -> { value: BinaryOperator::Multiply -> {} });
+                self.advance();
+            }
+            on '/' {
+                self.tokens.push(Token -> { value: BinaryOperator::Divide -> {} });
+                self.advance();
+            }
             on '=' {
                 self.advance();
-                if self.source[self.current] == '=' {
+                if self.current < self.len and self.source[self.current] == '=' {
+                    self.advance();
                     self.tokens.push(Token -> { value: BinaryOperator::Equal -> {} });
                 } else {
-                    # TODO: Error
+                    std::io::println("Unexpected token '='");
+                    std::exit(1);
                 }
             }
             on '!' {
                 self.advance();
-                if self.source[self.current] == '=' {
+                if self.current < self.len and self.source[self.current] == '=' {
+                    self.advance();
                     self.tokens.push(Token -> { value: BinaryOperator::NotEqual -> {} });
                 } else {
                     self.tokens.push(Token -> { value: UnaryOperator::Not -> {} });
                 }
             }
+            on '>' {
+                self.advance();
+                if self.current < self.len and self.source[self.current] == '=' {
+                    self.advance();
+                    self.tokens.push(Token -> { value: BinaryOperator::GreaterEqual -> {} });
+                } else {
+                    self.tokens.push(Token -> { value: BinaryOperator::Greater -> {} });
+                }
+            }
+            on '<' {
+                self.advance();
+                if self.current < self.len and self.source[self.current] == '=' {
+                    self.advance();
+                    self.tokens.push(Token -> { value: BinaryOperator::LessEqual -> {} });
+                } else {
+                    self.tokens.push(Token -> { value: BinaryOperator::Less -> {} });
+                }
+            }
             on std::char::is_digit(c) {
                 var start: i32 = self.current;
-                while std::char::is_digit(self.source[self.current]) {
+                while self.current < self.len and std::char::is_digit(self.source[self.current]) {
                     self.advance();
                 }
-                self.tokens.push(Token -> { value: Value::from_str(self.source.substr(start, self.current)) as Value });
+                self.tokens.push(Token -> {
+                    value: Value::from_str(
+                        std::str::substr(self.source, start, self.current)
+                    ) as Value 
+                });
             }
             on std::char::is_alpha(c) {
                 var start: i32 = self.current;
-                while std::char::is_alpha(self.source[self.current]) {
+                while self.current < self.len and std::char::is_alpha(self.source[self.current]) {
                     self.advance();
                 }
-                var substr: str = self.source.substr(start, self.current);
+                var substr: str = std::str::substr(self.source, start, self.current);
                 var value = Value::from_str(substr);
                 if value {
                     self.tokens.push(Token -> { value: value as Value });
@@ -333,14 +388,15 @@ type Lexer {
                         if operator {
                             self.tokens.push(Token -> { value: operator as UnaryOperator });
                         } else {
-                            # TODO: Error
+                            std::io::println("Unexpected token '" + substr + "'");
+                            std::exit(1);
                         }
                     }
                 }
             }
             else {
-                self.advance();
-                # TODO: Error
+                std::io::println("Unexpected character '" + std::char::to_str(c) + "'");
+                std::exit(1);
             }
         }
     }
@@ -349,7 +405,7 @@ type Lexer {
 type Parser {
     self {
         tokens: [Token],
-        index: i32,
+        index: u32,
     }
 
     pub fn new(tokens: [Token]) -> Self {
@@ -563,6 +619,13 @@ type Parser {
                 operator: operator as UnaryOperator,
                 operand: operand as Expression,
             };
+        } else if self.current_token().value is BinaryOperator::Subtract {
+            self.advance();
+            var operand = self.parse_unary();
+            return Expression::Unary -> {
+                operator: UnaryOperator::Negate -> {},
+                operand: operand as Expression,
+            };
         }
         return self.parse_primary();
     }
@@ -590,10 +653,28 @@ type Parser {
 }
 
 
-fn main(args: [str]) {
+fn main(args: [str]) -> i32 {
     var source = "1 + 2 * 3";
+    if args.len() == 1 {
+        source = args[0];
+    }
     var lexer = Lexer::new(source);
     var tokens = lexer.lex();
+
+    if tokens.len() == 0 {
+        std::io::println("no input!");
+        std::exit(1);
+    }
+
+    std::io::print("token count: ");
+    std::io::println(std::u64::to_str(tokens.len()));
+
+    std::io::println("tokens: [");
+    for t in tokens {
+        std::io::println("   " + std::Display::display(t) + ",");
+    }
+    std::io::println("]");
+
     var parser = Parser::new(tokens);
     var expression = parser.parse();
 
@@ -609,4 +690,6 @@ fn main(args: [str]) {
     } else {
         std::io::println("Error: Didn't parse");
     }
+
+    return 0;
 }

@@ -62,6 +62,12 @@ pub enum ValidatorError {
     PreconditionNotExhaustive(String),
     PreconditionWildcardDuplicate(String),
     PreconditionWildcardInvalid(String),
+    NamespaceCollision(String),
+    PrivateMethodCall(String),
+    PrivateFunctionCall(String),
+    DuplicateMainFunction,
+    InvalidMainFunction,
+    NoMainFunction,
 }
 
 impl Display for ValidatorError {
@@ -125,7 +131,11 @@ impl Display for ValidatorError {
                 write!(f, "Cannot index non-list type {}", ty)
             }
             ValidatorError::IndexNotInt(ty, index) => {
-                write!(f, "Cannot index type {} with non-integer {}", ty, index)
+                write!(
+                    f,
+                    "Cannot index type {} with type {}. Try casting to an unsigned integer.",
+                    ty, index
+                )
             }
             ValidatorError::ConstructorOfVariantedType(ty) => {
                 write!(
@@ -306,36 +316,56 @@ impl Display for ValidatorError {
                     name
                 )
             }
-            ValidatorError::PreconditionParameterInvalid(name) => 
-            {
+            ValidatorError::PreconditionParameterInvalid(name) => {
                 write!(
                     f,
                     "Preconditioned parameters {} cannot be safely collapsed.",
                     name
                 )
-            },
-            ValidatorError::PreconditionNotExhaustive(name) => 
-            {
-                write!(
-                    f,
-                    "Preconditions don't cover all cases for type {}.",
-                    name
-                )
-            },
+            }
+            ValidatorError::PreconditionNotExhaustive(name) => {
+                write!(f, "Preconditions don't cover all cases for parameter {}.", name)
+            }
             ValidatorError::PreconditionWildcardDuplicate(name) => {
                 write!(
                     f,
                     "Preconditions of parameter {} have incompatible wildcards",
                     name
                 )
-            },
+            }
             ValidatorError::PreconditionWildcardInvalid(name) => {
                 write!(
                     f,
                     "Preconditions of function {} have wildcards in different functions.",
                     name
                 )
-            },
+            }
+            ValidatorError::NamespaceCollision(name) => {
+                write!(f, "Namespaced reference {} is ambiguous.", name)
+            }
+            ValidatorError::PrivateMethodCall(name) => {
+                write!(
+                    f,
+                    "Cannot call private method {} outside of its defining type.",
+                    name
+                )
+            }
+            ValidatorError::PrivateFunctionCall(name) => {
+                write!(
+                    f,
+                    "Cannot call private function {} outside of its defining module.",
+                    name
+                )
+            }
+            ValidatorError::DuplicateMainFunction => {
+                write!(f, "Duplicate main function")
+            }
+            ValidatorError::InvalidMainFunction => {
+                write!(f, "Invalid main function")
+            }
+            ValidatorError::NoMainFunction => {
+                write!(f, "No main function")
+            }
         }
     }
 }

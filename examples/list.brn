@@ -1,0 +1,17 @@
+fn f() {
+    var l: [i32] = [1, 2, 3];
+
+    for i in l {
+        var x = i;
+    }
+
+    for i in std::iter::range(0, l.len()) {
+        var x = l[i as u64];
+        std::io::println(std::i32::to_str(x));
+    }
+}
+
+fn main(args: [str]) -> i32 {
+    f();
+    return 0;
+}

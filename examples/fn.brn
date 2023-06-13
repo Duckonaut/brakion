@@ -1,1 +1,1 @@
-fn main() { std::io::println("Hello, world!"); }
+fn main(args: [str]) -> i32 { std::io::println("Hello, world!"); return 0; }

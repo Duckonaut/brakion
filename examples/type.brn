@@ -1,6 +1,10 @@
 type Foo {
-    pub fn show() -> void {
-        # do something else
+    pub fn show(self) -> void {
+        self.show_private();
+    }
+
+    fn show_private(self) -> void {
+        std::io::println("Foo");
     }
 }
 
@@ -13,7 +17,7 @@ type Bar {
     }
 
     pub fn show(self) {
-        std::io::println("a = {}" + std::i32::to_str(self.a));
+        std::io::println("a = " + std::i32::to_str(self.a));
     }
 }
 
@@ -30,19 +34,19 @@ type Baz {
     }
 }
 
-fn main() -> void {
+fn main(args: [str]) -> i32 {
     var a: Foo = Foo -> {};
     var b: Bar = Bar -> { a: 5, b: a };
     var c: Baz = Baz -> { c: 5 };
 
-    c.c = void;
+    c.c = b;
 
-    var x: void = c.c as void;
+    var x = c.c;
 
-    # match x {
-    #     on void x.show();
-    #     else std::io::println("c is not void");
-    # }
+    match x {
+        on void;
+        else std::io::println("c is not void");
+    }
 
     if c.c is Bar {
         var tmp = c.c as Bar;
@@ -52,16 +56,6 @@ fn main() -> void {
         var tmp = c.c as Foo;
         tmp.show();
     }
-}
-mod std {
-    mod io {
-        fn println(x: str) {
-            # empty
-        }
-    }
-    mod i32 {
-        fn to_str(i: i32) -> str {
-            return "";
-        }
-    }
+
+    return 0;
 }
