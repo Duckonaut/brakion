@@ -1818,19 +1818,9 @@ impl<'a> BrakionTreeVisitorMut for Validator<'a> {
                 }
             }
             StmtKind::Assign { target, value } => {
-                let target_kind = match self.visit_expr(target) {
-                    Ok(target) => target,
-                    Err(err) => {
-                        return Err(err);
-                    }
-                };
+                let target_kind = self.visit_expr(target)?;
 
-                let value_kind = match self.visit_expr(value) {
-                    Ok(value) => value,
-                    Err(err) => {
-                        return Err(err);
-                    }
-                };
+                let value_kind = self.visit_expr(value)?;
 
                 let compatible = match target_kind.is_compatible(&value_kind, self.root()) {
                     Ok(compatible) => compatible,

@@ -140,7 +140,7 @@ type Value {
     pub fn from_str(s: str) -> Self | void {
         match s {
             on std::str::is_integer(s)
-                return Self::Integer -> { value: std::i32::parse(s) as i32 };
+                return Self::Integer -> { value: std::i32::parse(s) };
             on "true"
                 return Self::Boolean -> { value: true };
             on "false"
