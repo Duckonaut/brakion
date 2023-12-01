@@ -138,6 +138,55 @@ pub fn builtin_decls() -> Vec<Decl> {
                         },
                         body: Box::new(builtin_println),
                     }),
+                    Decl::Module {
+                        visibility: Visibility::Public,
+                        name: Identifier::new(Span::default(), "file"),
+                        body: vec![
+                            Decl::NativeFunction(NativeFunction {
+                                signature: FunctionSignature {
+                                    name: Identifier::new(Span::default(), "read"),
+                                    takes_self: false,
+                                    self_precondition: None,
+                                    parameters: vec![Parameter {
+                                        name: Identifier::new(Span::default(), "filename"),
+                                        ty: TypeReference {
+                                            span: None,
+                                            kind: TypeReferenceKind::String,
+                                        },
+                                        kind: ParameterSpec::Basic,
+                                    }],
+                                    return_type: TypeReference {
+                                        span: None,
+                                        kind: TypeReferenceKind::List(Box::new(TypeReference {
+                                            span: None,
+                                            kind: TypeReferenceKind::Integer(IntSize::I8, false),
+                                        })),
+                                    },
+                                },
+                                body: Box::new(file::read),
+                            }),
+                            Decl::NativeFunction(NativeFunction {
+                                signature: FunctionSignature {
+                                    name: Identifier::new(Span::default(), "read_str"),
+                                    takes_self: false,
+                                    self_precondition: None,
+                                    parameters: vec![Parameter {
+                                        name: Identifier::new(Span::default(), "filename"),
+                                        ty: TypeReference {
+                                            span: None,
+                                            kind: TypeReferenceKind::String,
+                                        },
+                                        kind: ParameterSpec::Basic,
+                                    }],
+                                    return_type: TypeReference {
+                                        span: None,
+                                        kind: TypeReferenceKind::String,
+                                    },
+                                },
+                                body: Box::new(file::read_str),
+                            }),
+                        ],
+                    },
                 ],
             },
             integer_decls!(i8, IntSize::I8, true),
@@ -613,6 +662,64 @@ mod char {
             Ok(Value::Bool(c.is_whitespace()))
         } else {
             panic!("is_whitespace() called with non-char argument");
+        }
+    }
+}
+
+mod file {
+    use std::io::Read;
+
+    use crate::interpreter::value::ListInstance;
+
+    use super::*;
+    pub fn read<'a>(
+        _: &mut crate::interpreter::Interpreter<'a>,
+        args: &[Value<'a>],
+    ) -> Result<Value<'a>, RuntimeError> {
+        if let Value::String(s) = &args[0] {
+            let file = std::fs::File::open(s);
+
+            if file.is_err() {
+                return Err(RuntimeError::Io(file.err().unwrap().kind()));
+            }
+            let mut file = file.unwrap();
+            let mut buf = Vec::new();
+
+            if let Err(e) = file.read_to_end(&mut buf) {
+                return Err(RuntimeError::Io(e.kind()));
+            }
+
+            let buf = buf.into_iter().map(Value::U8).collect::<Vec<_>>();
+
+            Ok(Value::List(ListInstance::wrap(
+                TypeReferenceKind::Integer(IntSize::I8, false),
+                buf,
+            )))
+        } else {
+            panic!("read() called with non-string argument");
+        }
+    }
+
+    pub fn read_str<'a>(
+        _: &mut crate::interpreter::Interpreter<'a>,
+        args: &[Value<'a>],
+    ) -> Result<Value<'a>, RuntimeError> {
+        if let Value::String(s) = &args[0] {
+            let file = std::fs::File::open(s);
+
+            if file.is_err() {
+                return Err(RuntimeError::Io(file.err().unwrap().kind()));
+            }
+            let mut file = file.unwrap();
+            let mut buf = String::new();
+
+            if let Err(e) = file.read_to_string(&mut buf) {
+                return Err(RuntimeError::Io(e.kind()));
+            }
+
+            Ok(Value::String(buf))
+        } else {
+            panic!("read_str() called with non-string argument");
         }
     }
 }

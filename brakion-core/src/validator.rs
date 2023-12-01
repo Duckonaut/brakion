@@ -1409,7 +1409,7 @@ impl<'a> Validator<'a> {
                         name.span,
                     ));
 
-                    let methods_mine = methods.drain(..).collect::<Vec<_>>();
+                    let methods_mine = std::mem::take(methods);
 
                     let collapsed = self.collapse_all_functions_with_vis(methods_mine)?;
 
@@ -1424,7 +1424,7 @@ impl<'a> Validator<'a> {
                 } => {
                     self.current_type = Some(type_name.clone());
 
-                    let methods_mine = body.drain(..).collect::<Vec<_>>();
+                    let methods_mine = std::mem::take(body);
 
                     let collapsed = self.collapse_all_functions(methods_mine)?;
 

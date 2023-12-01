@@ -1,4 +1,8 @@
-use std::{fmt::Display, hash::Hash, io::{Read, Seek}};
+use std::{
+    fmt::Display,
+    hash::Hash,
+    io::{Read, Seek},
+};
 
 pub(crate) const READ_INCREMENT: usize = 0x1000; // 4 KiB, default Linux page size
 
@@ -198,7 +202,7 @@ impl Hash for Unit {
     }
 }
 
-#[derive(Debug, Copy, PartialEq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash, Default)]
 pub struct Span {
     pub unit: UnitIdentifier,
     pub start: Location,
@@ -230,16 +234,6 @@ impl Span {
 impl Display for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}-{}", self.start, self.end)
-    }
-}
-
-impl Clone for Span {
-    fn clone(&self) -> Self {
-        Self {
-            unit: self.unit,
-            start: self.start,
-            end: self.end,
-        }
     }
 }
 

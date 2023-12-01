@@ -193,6 +193,12 @@ impl<'a> ListInstance<'a> {
         })))
     }
 
+    pub(crate) fn wrap(ty: TypeReferenceKind, vec: Vec<Value<'a>>) -> ListInstance<'a> {
+        Self(Rc::new(RefCell::new(ListInstanceInternal {
+            type_reference: ty,
+            elements: vec,
+        })))
+    }
     pub(crate) fn get_elements(&self) -> Vec<Value<'a>> {
         self.0.borrow().elements.clone()
     }
@@ -226,6 +232,7 @@ impl<'a> ListInstance<'a> {
     pub(crate) fn get_type_reference(&self) -> TypeReferenceKind {
         self.0.borrow().type_reference.clone()
     }
+
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -717,7 +724,7 @@ impl<'a> std::ops::Mul for Value<'a> {
             (Self::F32(l), Self::F64(r)) => Self::F32(l * r as f32),
             (Self::F64(l), Self::F64(r)) => Self::F64(l * r),
             (Self::F64(l), Self::F32(r)) => Self::F64(l * r as f64),
-            _ => panic!("Cannot multiply values"),
+            (l, r) => panic!("Cannot multiply values {:?}, {:?}", l, r),
         }
     }
 }

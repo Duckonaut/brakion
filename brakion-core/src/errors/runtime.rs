@@ -11,6 +11,7 @@ pub enum RuntimeError {
     UndefinedVariable(String),
     MainFunctionNotFound,
     DivisionByZero,
+    Io(std::io::ErrorKind),
 }
 
 impl Display for RuntimeError {
@@ -23,6 +24,7 @@ impl Display for RuntimeError {
             RuntimeError::UndefinedVariable(name) => write!(f, "Undefined variable: {}", name),
             RuntimeError::MainFunctionNotFound => write!(f, "Main function not found"),
             RuntimeError::DivisionByZero => write!(f, "Division by zero"),
+            RuntimeError::Io(err) => write!(f, "IO error: {}", err),
         }
     }
 }
